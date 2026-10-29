@@ -1,0 +1,3923 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Болашақтың Цифрлық Мектебі — 3D Интерактивті Білім Моделі</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@600;800&display=swap');
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+      background: #090d16;
+      color: #e2e8f0;
+    }
+    .font-scifi {
+      font-family: 'Orbitron', sans-serif;
+    }
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .hud-element {
+      z-index: 10;
+      pointer-events: auto;
+    }
+    .reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(56, 189, 248, 0.8);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.9);
+      pointer-events: none;
+      z-index: 20;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .reticle.active {
+      transform: translate(-50%, -50%) scale(2.2);
+      background: #22c55e;
+      box-shadow: 0 0 16px #22c55e;
+    }
+    /* Glassmorphism */
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.4);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.7);
+    }
+    /* Touch Virtual Joysticks */
+    #touch-controls {
+      display: none;
+    }
+    @media (pointer: coarse) {
+      #touch-controls {
+        display: block;
+      }
+    }
+
+    /* Realistic 3D Book Page Styles */
+    .book-container {
+      perspective: 1600px;
+    }
+    .book-spine-shadow {
+      box-shadow: inset 24px 0 35px -15px rgba(0, 0, 0, 0.28), inset -24px 0 35px -15px rgba(0, 0, 0, 0.28);
+    }
+    .page-turn-effect {
+      transition: transform 0.45s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s;
+    }
+  </style>
+</head>
+<body class="relative">
+
+  <!-- 3D Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- Center Crosshair -->
+  <div id="crosshair" class="reticle"></div>
+
+  <!-- Audio element for real recorded "Aday" kuy -->
+  <audio id="real-aday-audio" preload="auto" loop playsinline>
+    <source src="Курмангазы - Адай.mp3" type="audio/mpeg">
+    <source src="./Курмангазы - Адай.mp3" type="audio/mp3">
+  </audio>
+  <!-- Hidden file input to allow instant loading of user's uploaded MP3 if browser blocks relative path -->
+  <input type="file" id="local-audio-file-input" accept="audio/*" class="hidden">
+
+  <!-- Prompt Banner (E пернесін басыңыз) -->
+  <div id="interaction-prompt" class="hidden absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 px-6 py-3 rounded-full glass-panel border border-cyan-400 text-cyan-300 font-semibold tracking-wider flex items-center gap-3 animate-bounce shadow-lg shadow-cyan-500/20">
+    <span class="px-2.5 py-0.5 rounded bg-cyan-500 text-slate-900 font-bold text-sm">E</span>
+    <span id="prompt-text">Өзара әрекеттесу</span>
+  </div>
+
+  <!-- TOP HUD -->
+  <div class="hud-element absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
+    <!-- School Emblem & Title -->
+    <div class="glass-panel px-5 py-3 rounded-2xl flex items-center gap-4 pointer-events-auto border-cyan-500/30">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white text-xl shadow-lg shadow-cyan-500/30">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <div>
+        <h1 class="text-xs tracking-widest text-cyan-400 uppercase font-semibold">Цифрлық Мектеп Моделі</h1>
+        <h2 class="text-sm md:text-base font-bold text-white font-scifi">БОЛАШАҚТЫҢ ЦИФРЛЫҚ МЕКТЕБІ</h2>
+        <div class="text-[11px] text-amber-300 font-semibold flex items-center gap-1.5 mt-0.5">
+          <i class="fa-solid fa-user-graduate text-amber-400"></i> Жоба авторы: <span class="text-white font-bold">Қабдолла Манас</span>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center gap-2 px-3 py-1 bg-cyan-950/60 rounded-lg border border-cyan-500/30 text-xs text-cyan-300">
+        <i class="fa-solid fa-layer-group"></i>
+        <span>Қабат: <strong id="hud-floor-indicator" class="text-white">1</strong></span>
+      </div>
+    </div>
+
+    <!-- Quick Navigation Toolbar -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <button id="btn-upload-music" title="Өз аудиофайлыңызды жүктеп қосу (MP3)" class="px-3 h-11 rounded-xl glass-panel text-cyan-300 hover:text-white hover:border-cyan-400 flex items-center justify-center text-xs font-bold transition duration-200">
+        <i class="fa-solid fa-file-audio text-sm mr-1.5 text-cyan-400"></i>
+        <span>Аудио таңдау</span>
+      </button>
+      <button id="btn-toggle-cam-view" title="Камера көрінісі (1-адам / 3-адам оқушы)" class="px-3 h-11 rounded-xl glass-panel text-cyan-300 hover:text-white hover:border-cyan-400 flex items-center gap-1.5 text-xs font-bold transition duration-200">
+        <i class="fa-solid fa-person text-sm"></i>
+        <span id="cam-view-label" class="hidden sm:inline">3D Оқушы</span>
+      </button>
+      <button id="btn-open-map" title="3D Мектеп картасы" class="w-11 h-11 rounded-xl glass-panel text-cyan-300 hover:text-white hover:border-cyan-400 flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-map-location-dot"></i>
+      </button>
+      <button id="btn-open-schedule" title="Ақылды сабақ кестесі" class="w-11 h-11 rounded-xl glass-panel text-cyan-300 hover:text-white hover:border-cyan-400 flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-calendar-days"></i>
+      </button>
+      <button id="btn-open-library" title="Ақылды кітапхана" class="w-11 h-11 rounded-xl glass-panel text-cyan-300 hover:text-white hover:border-cyan-400 flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-book-bookmark"></i>
+      </button>
+      <button id="btn-open-ai" title="AI Цифрлық көмекші" class="w-11 h-11 rounded-xl glass-panel text-amber-400 hover:text-amber-200 hover:border-amber-400 flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-brain"></i>
+      </button>
+      <button id="btn-toggle-sound" title="Дыбысты қосу/өшіру" class="w-11 h-11 rounded-xl glass-panel text-slate-300 hover:text-white flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-volume-high" id="sound-icon"></i>
+      </button>
+      <button id="btn-help-controls" title="Басқару нұсқаулығы" class="w-11 h-11 rounded-xl glass-panel text-slate-300 hover:text-white flex items-center justify-center text-lg transition duration-200">
+        <i class="fa-solid fa-circle-question"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- BOTTOM HUD (Control Info & Quick Teleport Floors) -->
+  <div class="hud-element absolute bottom-4 left-4 right-4 flex items-end justify-between pointer-events-none">
+    <!-- Key info -->
+    <div class="glass-panel px-4 py-2.5 rounded-xl text-xs text-slate-300 hidden sm:flex items-center gap-4 pointer-events-auto border-slate-700">
+      <div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-white font-mono">W A S D</span> Жүру</div>
+      <div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-white font-mono">Тінтуір</span> Қарау (шертіңіз)</div>
+      <div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-white font-mono">E</span> Есік ашу / Тәжірибе</div>
+      <div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-white font-mono">Space</span> Жүгіру / Лифт</div>
+    </div>
+
+    <!-- Floor switcher elevator shortcuts -->
+    <div class="glass-panel p-1.5 rounded-2xl flex items-center gap-1.5 pointer-events-auto border-cyan-500/30">
+      <span class="text-xs text-cyan-400 px-2 font-semibold">ЛИФТ:</span>
+      <button onclick="window.schoolApp.teleportFloor(1)" class="floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-cyan-600 text-white shadow" data-floor="1">1 Қабат (STEM)</button>
+      <button onclick="window.schoolApp.teleportFloor(2)" class="floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700" data-floor="2">2 Қабат (Ғылым)</button>
+      <button onclick="window.schoolApp.teleportFloor(3)" class="floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700" data-floor="3">3 Қабат (Өнер)</button>
+      <button onclick="window.schoolApp.teleportExterior()" class="floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700">Сыртқы Көрініс</button>
+    </div>
+  </div>
+
+  <!-- INTRO HERO OVERLAY (Мектепке кіру) -->
+  <div id="intro-modal" class="fixed inset-0 z-50 flex items-center justify-between p-6 md:p-10 pointer-events-none transition-all duration-700">
+    <!-- Left Floating Welcome Card -->
+    <div class="glass-panel max-w-lg w-full p-6 md:p-8 rounded-3xl border border-cyan-500/40 shadow-2xl shadow-cyan-500/20 pointer-events-auto relative overflow-hidden flex flex-col justify-between">
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-semibold mb-3">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Жасыл & Смарт Эко-Кампус</span>
+        </div>
+        <h3 class="text-xs uppercase font-bold tracking-widest text-cyan-400 mb-1">3D Интерактивті Білім Моделі</h3>
+        <h2 class="text-2xl md:text-3xl font-extrabold text-white font-scifi leading-tight mb-2">
+          БОЛАШАҚТЫҢ ЦИФРЛЫҚ МЕКТЕБІ
+        </h2>
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold mb-3">
+          <i class="fa-solid fa-award text-amber-400 text-sm"></i>
+          <span>Әзірлеген оқушы: Қабдолла Манас</span>
+        </div>
+        <p class="text-slate-300 text-xs sm:text-sm leading-relaxed mb-5">
+          Мектептің 3D жасыл ауласы, заманауи сәулеті мен кабинеттері. Фотодағыдай Қабдолла Манастың 3D кейіпкерімен бірге дәліздер мен кабинеттерді еркін аралай аласыз!
+        </p>
+
+        <div class="grid grid-cols-3 gap-2.5 mb-6 text-left text-xs">
+          <div class="glass-card p-2.5 rounded-xl border border-cyan-500/20 text-center">
+            <i class="fa-solid fa-microchip text-cyan-400 text-base mb-1 block"></i>
+            <span class="font-bold text-white block text-[11px]">1-қабат</span>
+            <span class="text-slate-400 text-[10px]">AI, Робот, STEM</span>
+          </div>
+          <div class="glass-card p-2.5 rounded-xl border border-blue-500/20 text-center">
+            <i class="fa-solid fa-calculator text-blue-400 text-base mb-1 block"></i>
+            <span class="font-bold text-white block text-[11px]">2-қабат</span>
+            <span class="text-slate-400 text-[10px]">Математика, IT</span>
+          </div>
+          <div class="glass-card p-2.5 rounded-xl border border-purple-500/20 text-center">
+            <i class="fa-solid fa-palette text-purple-400 text-base mb-1 block"></i>
+            <span class="font-bold text-white block text-[11px]">3-қабат</span>
+            <span class="text-slate-400 text-[10px]">Өнер, Спорт, Медиа</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <button id="btn-enter-school" class="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 hover:from-emerald-400 hover:to-blue-500 text-white font-bold text-base md:text-lg tracking-wider shadow-xl shadow-cyan-500/30 transition transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-3">
+          <i class="fa-solid fa-door-open text-xl"></i>
+          <span>МЕКТЕПКЕ КІРУ (3D СЕРУЕН)</span>
+        </button>
+        <div class="mt-3 text-[11px] text-slate-400 flex items-center justify-center gap-4">
+          <span><i class="fa-solid fa-arrows-rotate mr-1 text-cyan-400"></i> Тінтуірмен 3D ауланы бұрыңыз</span>
+          <span><i class="fa-solid fa-keyboard mr-1 text-cyan-400"></i> W, A, S, D іште</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Side Camera View Controls on Exterior -->
+    <div class="hidden lg:flex flex-col gap-3 pointer-events-auto">
+      <div class="glass-panel p-3 rounded-2xl border border-cyan-500/30 flex flex-col gap-2 text-xs">
+        <span class="text-cyan-400 font-bold px-1 uppercase tracking-wider text-[10px]">Аула Көрінісі:</span>
+        <button onclick="window.schoolApp.setExteriorView('front')" class="px-3 py-1.5 rounded-lg bg-cyan-600/30 hover:bg-cyan-600 text-white text-left transition flex items-center gap-2">
+          <i class="fa-solid fa-camera"></i> Негізгі Фасад
+        </button>
+        <button onclick="window.schoolApp.setExteriorView('top')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-cyan-600 text-slate-200 text-left transition flex items-center gap-2">
+          <i class="fa-solid fa-plane"></i> Төбеден қарау
+        </button>
+        <button onclick="window.schoolApp.setExteriorView('garden')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-cyan-600 text-slate-200 text-left transition flex items-center gap-2">
+          <i class="fa-solid fa-tree"></i> Жасыл Саябақ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERACTIVE CLASSROOM MODAL (Оқу зертханалары мен тапсырмалар) -->
+  <div id="classroom-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-cyan-500/40 shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-700/80 flex items-center justify-between bg-slate-900/60">
+        <div class="flex items-center gap-3">
+          <div id="modal-icon-container" class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl">
+            <i class="fa-solid fa-atom"></i>
+          </div>
+          <div>
+            <span id="modal-subtitle" class="text-xs font-semibold text-cyan-400 tracking-wider uppercase">Зертхана</span>
+            <h2 id="modal-title" class="text-lg sm:text-xl font-bold text-white font-scifi">Кабинет атауы</h2>
+          </div>
+        </div>
+        <button id="btn-close-modal" class="w-9 h-9 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 flex items-center justify-center transition">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Modal Tabs for the 3 distinct activities -->
+      <div class="px-6 pt-3 bg-slate-900/40 flex items-center gap-2 border-b border-slate-800" id="modal-tabs-bar">
+        <button class="tab-btn px-4 py-2 text-xs font-bold rounded-t-xl transition text-cyan-400 border-b-2 border-cyan-400 bg-slate-800/60" data-tab="tab-info">
+          <i class="fa-solid fa-circle-info mr-1.5"></i> 1. Ақпарат & Теория
+        </button>
+        <button class="tab-btn px-4 py-2 text-xs font-bold rounded-t-xl transition text-slate-400 hover:text-slate-200" data-tab="tab-experiment">
+          <i class="fa-solid fa-flask-vial mr-1.5"></i> 2. Тәжірибе & Симуляция
+        </button>
+        <button class="tab-btn px-4 py-2 text-xs font-bold rounded-t-xl transition text-slate-400 hover:text-slate-200" data-tab="tab-quiz">
+          <i class="fa-solid fa-gamepad mr-1.5"></i> 3. Тапсырма & Ойын
+        </button>
+      </div>
+
+      <!-- Modal Content Body -->
+      <div id="modal-body" class="p-6 overflow-y-auto flex-1 text-slate-200">
+        <!-- Dynamic content injected here per subject -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between text-xs text-slate-400">
+        <span><i class="fa-solid fa-graduation-cap text-cyan-400 mr-1"></i> Цифрлық білім бағдарламасы</span>
+        <button id="btn-exit-to-school" class="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition">
+          Кабинетке қайту (Шығу)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D SCHOOL MAP MODAL (9-бөлім талабы) -->
+  <div id="map-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-3xl rounded-3xl p-6 border border-cyan-500/30 flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-map-location-dot text-2xl text-cyan-400"></i>
+          <div>
+            <h3 class="font-scifi font-bold text-white text-lg">МЕКТЕПТІҢ ИНТЕРАКТИВТІ 3D КАРТАСЫ</h3>
+            <p class="text-xs text-slate-400">Кабинетті таңдап, бағыт алып, жылдам орын ауыстырыңыз</p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('map-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="py-4 flex gap-2 border-b border-slate-800">
+        <button onclick="window.schoolApp.switchMapFloor(1)" class="map-floor-tab px-4 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 text-white" id="map-tab-1">1-қабат (STEM)</button>
+        <button onclick="window.schoolApp.switchMapFloor(2)" class="map-floor-tab px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300" id="map-tab-2">2-қабат (Ғылым & Тілдер)</button>
+        <button onclick="window.schoolApp.switchMapFloor(3)" class="map-floor-tab px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300" id="map-tab-3">3-қабат (Өнер & Спорт)</button>
+      </div>
+
+      <div class="py-4 overflow-y-auto flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3" id="map-rooms-grid">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- SMART TIMETABLE MODAL (8-бөлім талабы) -->
+  <div id="schedule-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-3xl rounded-3xl p-6 border border-cyan-500/30 flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-calendar-days text-2xl text-cyan-400"></i>
+          <div>
+            <h3 class="font-scifi font-bold text-white text-lg">АҚЫЛДЫ САБАҚ КЕСТЕСІ</h3>
+        <p class="text-xs text-slate-400">Сынып пен күнді таңдап, қажетті кабинеттің алдына барыңыз</p>
+      </div>
+    </div>
+    <button onclick="document.getElementById('schedule-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+
+  <div class="py-3 flex flex-wrap items-center gap-3 border-b border-slate-800 text-xs">
+    <div class="flex items-center gap-2">
+      <label class="text-slate-300 font-semibold">Сынып:</label>
+      <select id="schedule-grade-select" class="bg-slate-800 text-white rounded-lg px-3 py-1.5 border border-slate-700 outline-none font-bold">
+        <option value="5a">5 «А» — Тұрақты кесте</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-2 ml-2">
+      <label class="text-slate-300 font-semibold">Күн:</label>
+      <select id="schedule-day-select" class="bg-slate-800 text-white rounded-lg px-3 py-1.5 border border-slate-700 outline-none font-semibold">
+        <option value="mon">Дүйсенбі</option>
+        <option value="tue">Сейсенбі</option>
+        <option value="wed">Сәрсенбі</option>
+        <option value="thu">Бейсенбі</option>
+        <option value="fri">Жұма</option>
+      </select>
+    </div>
+    <div class="ml-auto text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-3 py-1 rounded-lg">
+      <i class="fa-solid fa-sun mr-1"></i> Түскі ауысым: STEM & Робототехника үйірмелері
+    </div>
+  </div>
+
+  <div class="py-4 overflow-y-auto flex-1 space-y-4" id="schedule-table-container">
+    <!-- Rendered by JS -->
+  </div>
+</div>
+</div>
+
+  <!-- REALISTIC E-BOOK READER MODAL (Шынайы ашылатын кітап оқу құралы) -->
+  <div id="book-reader-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-950/90 backdrop-blur-xl">
+    <div class="w-full max-w-5xl h-[92vh] flex flex-col rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl overflow-hidden relative">
+      
+      <!-- Top Book Bar -->
+      <div class="px-6 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm font-bold">
+            <i class="fa-solid fa-book-open"></i>
+          </div>
+          <div>
+            <h3 id="reader-book-title" class="font-bold text-white text-sm">Оқулық атауы</h3>
+            <span id="reader-book-author" class="text-[11px] text-amber-400 font-medium">Автор және баспа</span>
+          </div>
+        </div>
+
+        <!-- Page Controls & Close -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center bg-slate-800/90 rounded-xl px-2.5 py-1 border border-slate-700">
+            <button id="book-prev-btn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition" title="Алдыңғы бет">
+              <i class="fa-solid fa-chevron-left text-xs"></i>
+            </button>
+            <span id="book-page-indicator" class="mx-3 text-xs font-mono font-bold text-amber-300">1-2 / 6 бет</span>
+            <button id="book-next-btn" class="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition" title="Келесі бет">
+              <i class="fa-solid fa-chevron-right text-xs"></i>
+            </button>
+          </div>
+          <button id="book-close-btn" class="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-rose-600 flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark text-sm"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Realistic Book Spread (Екі беттік ашылған кітап) -->
+      <div class="flex-1 bg-[#1a1412] p-3 sm:p-8 flex items-center justify-center overflow-hidden book-container">
+        <div class="w-full max-w-4xl h-full max-h-[640px] bg-[#fdfbf7] rounded-2xl shadow-2xl flex flex-col md:flex-row relative border-4 border-[#3d271d] book-spine-shadow overflow-hidden text-slate-800">
+          
+          <!-- Book Center Spine Ridge -->
+          <div class="hidden md:block absolute left-1/2 top-0 bottom-0 w-8 -translate-x-1/2 bg-gradient-to-r from-black/20 via-black/5 to-black/20 pointer-events-none z-20"></div>
+
+          <!-- Left Page -->
+          <div id="book-page-left" class="flex-1 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto border-b md:border-b-0 md:border-r border-slate-300/80 bg-[#fefdfb] relative">
+            <!-- Content injected via JS -->
+          </div>
+
+          <!-- Right Page -->
+          <div id="book-page-right" class="flex-1 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto bg-[#faf8f5] relative">
+            <!-- Content injected via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Book Reader Footer -->
+      <div class="px-6 py-2.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <span class="flex items-center gap-2 text-slate-400">
+          <i class="fa-solid fa-feather-pointed text-amber-400"></i>
+          <span>Оқушы: <strong>Қабдолла Манастың</strong> электронды оқу залы</span>
+        </span>
+        <div class="flex items-center gap-4 text-[11px]">
+          <span><kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">← / →</kbd> Пернелермен парақтау</span>
+          <span><kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">ESC</kbd> Жабу</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SMART DIGITAL LIBRARY (7-бөлім талабы) -->
+  <div id="library-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-4xl rounded-3xl p-6 border border-cyan-500/30 flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-book-bookmark text-2xl text-cyan-400"></i>
+          <div>
+            <h3 class="font-scifi font-bold text-white text-lg">АҚЫЛДЫ ЦИФРЛЫҚ КІТАПХАНА</h3>
+            <p class="text-xs text-slate-400">Барлық мектеп пәндері бойынша электронды оқулықтар мен ғылыми ресурстар</p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('library-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="py-3 flex gap-2 overflow-x-auto border-b border-slate-800 text-xs no-scrollbar" id="lib-category-filters">
+        <button class="lib-cat-btn px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-bold whitespace-nowrap" data-cat="all">Барлығы</button>
+        <button class="lib-cat-btn px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold whitespace-nowrap" data-cat="stem">STEM & AI</button>
+        <button class="lib-cat-btn px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold whitespace-nowrap" data-cat="science">Жаратылыстану</button>
+        <button class="lib-cat-btn px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold whitespace-nowrap" data-cat="math">Математика & IT</button>
+        <button class="lib-cat-btn px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold whitespace-nowrap" data-cat="humanities">Тілдер & Тарих</button>
+      </div>
+
+      <div class="py-4 overflow-y-auto flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="library-books-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- AI ASSISTANT DIALOG MODAL -->
+  <div id="ai-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-2xl rounded-3xl p-6 border border-amber-500/40 flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
+            <i class="fa-solid fa-robot"></i>
+          </div>
+          <div>
+            <h3 class="font-scifi font-bold text-white text-lg">AI ЦИФРЛЫҚ ТӘЛІМГЕР</h3>
+            <p class="text-xs text-amber-300/80">Мектеп пен кез келген оқу тақырыбы бойынша сұраңыз</p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('ai-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div id="ai-chat-history" class="py-4 overflow-y-auto flex-1 space-y-3 text-sm">
+        <div class="flex gap-3">
+          <div class="w-7 h-7 rounded-full bg-amber-500 flex items-center justify-center text-slate-900 text-xs font-bold"><i class="fa-solid fa-sparkles"></i></div>
+          <div class="bg-slate-800/80 p-3 rounded-2xl rounded-tl-none border border-slate-700 text-slate-200">
+            Сәлеметсіз бе! Мен «Болашақтың Цифрлық Мектебінің» жасанды интеллект кеңесшісімін. Кез келген пән, зертхана немесе мектеп навигациясы туралы сұрақ қоя аласыз.
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex gap-2">
+        <input id="ai-input-field" type="text" placeholder="Мысалы: Химия зертханасы қай қабатта? немесе STEM деген не?" class="flex-1 bg-slate-900 rounded-xl px-4 py-2.5 text-sm text-white border border-slate-700 outline-none focus:border-amber-400">
+        <button id="ai-send-btn" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm transition flex items-center gap-2">
+          <span>Сұрау</span>
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HELP & CONTROLS MODAL -->
+  <div id="help-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-lg rounded-3xl p-6 border border-cyan-500/30">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <h3 class="font-scifi font-bold text-white text-lg">БАСҚАРУ НҰСҚАУЛЫҒЫ</h3>
+        <button onclick="document.getElementById('help-modal').classList.add('hidden')" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="py-4 space-y-3 text-sm text-slate-300">
+        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-800/50">
+          <span>Алға / Артқа / Солға / Оңға</span>
+          <span class="font-mono text-cyan-400 font-bold">W, A, S, D / Бағыттауыштар</span>
+        </div>
+        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-800/50">
+          <span>Айнала қарау</span>
+          <span class="font-mono text-cyan-400 font-bold">Тінтуір қозғалысы (Pointer Lock)</span>
+        </div>
+        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-800/50">
+          <span>Есікті ашу / Нысанмен әрекеттесу</span>
+          <span class="font-mono text-cyan-400 font-bold">E пернесі немесе Шерту</span>
+        </div>
+        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-800/50">
+          <span>Кабинеттен негізгі мәзірге шығу</span>
+          <span class="font-mono text-cyan-400 font-bold">ESC пернесі</span>
+        </div>
+        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-800/50">
+          <span>Қабат ауыстыру (Лифт)</span>
+          <span class="font-mono text-cyan-400 font-bold">Төменгі HUD лифт батырмалары</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOUCH CONTROLS FOR MOBILE -->
+  <div id="touch-controls" class="hud-element absolute inset-x-4 bottom-16 pointer-events-none flex justify-between items-end">
+    <!-- Virtual Movement D-Pad -->
+    <div class="pointer-events-auto w-32 h-32 rounded-full glass-panel relative border border-cyan-500/40 opacity-70 active:opacity-100 flex items-center justify-center" id="touch-dpad">
+      <div class="absolute top-2 left-1/2 -translate-x-1/2 text-cyan-400 text-xl font-bold">▲</div>
+      <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-cyan-400 text-xl font-bold">▼</div>
+      <div class="absolute left-2 top-1/2 -translate-y-1/2 text-cyan-400 text-xl font-bold">◀</div>
+      <div class="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 text-xl font-bold">▶</div>
+      <div class="w-12 h-12 rounded-full bg-cyan-500/40 border border-cyan-300"></div>
+    </div>
+
+    <!-- Action Button (Interact E) -->
+    <div class="pointer-events-auto flex flex-col gap-3">
+      <button id="touch-action-btn" class="w-16 h-16 rounded-2xl bg-cyan-500 text-slate-900 text-2xl font-black shadow-lg shadow-cyan-500/50 active:scale-95 flex items-center justify-center">
+        E
+      </button>
+    </div>
+  </div>
+
+  <!-- MAIN SCRIPT -->
+  <script>
+    /**
+     * БОЛАШАҚТЫҢ ЦИФРЛЫҚ МЕКТЕБІ — 3D Architecture, Physics, Interactions, AI
+     * Fully self-contained Three.js Application
+     */
+
+    // Audio synthesizer using Web Audio API (no external asset dependencies)
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+        this.isKuyPlaying = false;
+        this.kuyTimeout = null;
+        this.realAudio = null;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (!this.realAudio) {
+          this.realAudio = document.getElementById('real-aday-audio');
+        }
+      }
+
+      /**
+       * Пайдаланушы жүктеген немесе таңдаған кез келген нақты аудиофайлды тікелей қосу
+       */
+      loadCustomAudioFile(file) {
+        if (!file) return;
+        this.init();
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+        const fileUrl = URL.createObjectURL(file);
+        const realAudio = this.realAudio || document.getElementById('real-aday-audio');
+        if (realAudio) {
+          realAudio.src = fileUrl;
+          realAudio.load();
+          this.startAdayKuy();
+        }
+      }
+
+      playTone(freq = 440, type = 'sine', duration = 0.2, gainVal = 0.1) {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+      }
+      playDombraPluck(freq, timeOffset = 0, duration = 0.22, vol = 0.22) {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const t = this.ctx.currentTime + timeOffset;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          
+          // Dombra characteristic pluck sound: sawtooth with lowpass filter
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(1800, t);
+          filter.frequency.exponentialRampToValueAtTime(450, t + duration);
+
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, t);
+
+          gain.gain.setValueAtTime(vol, t);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(t);
+          osc.stop(t + duration);
+        } catch(e) {}
+      }
+
+      /**
+       * Құрманғазының «Адай» күйінің шынайы жазылған нұсқасын (MP3 аудиосын) ойнату
+       * Аудио жүктелмеген жағдайда автоматты түрде домбыра синтезаторына қосылады
+       */
+      startAdayKuy() {
+        if (this.isKuyPlaying) return;
+        this.init();
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+        this.isKuyPlaying = true;
+
+        const realAudio = this.realAudio || document.getElementById('real-aday-audio');
+        if (realAudio) {
+          realAudio.volume = 1.0;
+          // Ensure source is loaded if empty
+          if (!realAudio.src || realAudio.src === '') {
+            realAudio.src = 'Курмангазы - Адай.mp3';
+          }
+          const playPromise = realAudio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              const uploadMusicBtn = document.getElementById('btn-upload-music');
+              if (uploadMusicBtn) {
+                uploadMusicBtn.classList.add('border-emerald-400', 'text-emerald-300');
+              }
+            }).catch((err) => {
+              console.warn("Direct MP3 play restricted by browser policy, switching to synth fallback:", err);
+              this.startAdaySynthFallback();
+            });
+          }
+        } else {
+          this.startAdaySynthFallback();
+        }
+      }
+
+      startAdaySynthFallback() {
+        const N = {
+          D3: 146.83, G3: 196.00, A3: 220.00, C4: 261.63,
+          D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00
+        };
+
+        const pattern = [
+          { f: N.D4, d: 0.12 }, { f: N.D4, d: 0.12 }, { f: N.A3, d: 0.12 }, { f: N.D4, d: 0.16 },
+          { f: N.F4, d: 0.12 }, { f: N.E4, d: 0.12 }, { f: N.D4, d: 0.16 }, { f: N.A3, d: 0.14 },
+          { f: N.D4, d: 0.12 }, { f: N.D4, d: 0.12 }, { f: N.G4, d: 0.18 }, { f: N.F4, d: 0.14 },
+          { f: N.E4, d: 0.12 }, { f: N.D4, d: 0.20 },
+          { f: N.A4, d: 0.14 }, { f: N.A4, d: 0.14 }, { f: N.G4, d: 0.14 }, { f: N.F4, d: 0.14 },
+          { f: N.E4, d: 0.12 }, { f: N.F4, d: 0.12 }, { f: N.G4, d: 0.18 }, { f: N.E4, d: 0.14 },
+          { f: N.D4, d: 0.14 }, { f: N.C4, d: 0.12 }, { f: N.D4, d: 0.28 }
+        ];
+
+        let playLoop = () => {
+          if (!this.isKuyPlaying) return;
+          let delay = 0;
+          pattern.forEach(note => {
+            this.playDombraPluck(note.f, delay, note.d * 1.5, 0.26);
+            this.playDombraPluck(note.f * 0.75, delay + 0.015, note.d * 1.2, 0.16);
+            delay += note.d;
+          });
+          this.kuyTimeout = setTimeout(playLoop, delay * 1000 + 150);
+        };
+
+        playLoop();
+      }
+
+      stopAdayKuy() {
+        this.isKuyPlaying = false;
+        if (this.realAudio) {
+          try {
+            this.realAudio.pause();
+            this.realAudio.currentTime = 0;
+          } catch(e) {}
+        }
+        if (this.kuyTimeout) {
+          clearTimeout(this.kuyTimeout);
+          this.kuyTimeout = null;
+        }
+        const uploadMusicBtn = document.getElementById('btn-upload-music');
+        if (uploadMusicBtn) {
+          uploadMusicBtn.classList.remove('border-emerald-400', 'text-emerald-300');
+        }
+      }
+      playDoor() {
+        this.playTone(180, 'triangle', 0.4, 0.15);
+        setTimeout(() => this.playTone(240, 'triangle', 0.3, 0.1), 150);
+      }
+      playStep() {
+        this.playTone(90, 'sine', 0.08, 0.05);
+      }
+      playInteract() {
+        this.playTone(520, 'sine', 0.15, 0.12);
+        setTimeout(() => this.playTone(780, 'sine', 0.25, 0.15), 100);
+      }
+      playSuccess() {
+        this.playTone(440, 'sine', 0.15, 0.15);
+        setTimeout(() => this.playTone(554, 'sine', 0.15, 0.15), 120);
+        setTimeout(() => this.playTone(659, 'sine', 0.3, 0.2), 240);
+      }
+      playError() {
+        this.playTone(250, 'sawtooth', 0.2, 0.15);
+        setTimeout(() => this.playTone(190, 'sawtooth', 0.3, 0.2), 150);
+      }
+      playElevator() {
+        // Disabled background elevator chime
+      }
+      playPageTurn() {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          // Realistic soft paper rustle noise
+          const bufferSize = this.ctx.sampleRate * 0.18;
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+          }
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+          filter.Q.setValueAtTime(1.8, this.ctx.currentTime);
+
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.18);
+
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+          noise.start();
+        } catch(e) {}
+      }
+    }
+
+    const sound = new SoundEngine();
+
+    // Data for All 25+ Educational Rooms Across 3 Floors
+    const SCHOOL_DATA = {
+      // 1-ҚАБАТ: STEM, Технология, Инженерия және Зерттеулер
+      floor1: [
+        {
+          id: 'room-ai',
+          name: 'Жасанды Интеллект Зертханасы',
+          code: '101',
+          floor: 1,
+          icon: 'fa-brain',
+          color: '#06b6d4',
+          doorPos: { x: -28, y: 0, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -28, y: 0, z: 36 },
+          signText: 'ЖАСАНДЫ ИНТЕЛЛЕКТ ЗЕРТХАНАСЫ',
+          desc: 'Нейрожелілер, машиналық оқыту, мәтін және графикалық модельдер генерациясы.',
+          interactables: [
+            { id: 'ai-screen', label: 'Интерактивті AI Жұмыс Панелі', type: 'ai-hub' },
+            { id: 'ai-robotics', label: 'Цифрлық Көмекші Сервері', type: 'ai-server' }
+          ]
+        },
+        {
+          id: 'room-robotics',
+          name: 'Робототехника Кабинеті',
+          code: '102',
+          floor: 1,
+          icon: 'fa-robot',
+          color: '#3b82f6',
+          doorPos: { x: -12, y: 0, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -12, y: 0, z: 36 },
+          signText: 'РОБОТОТЕХНИКА КАБИНЕТІ',
+          desc: 'Сенсорлармен жабдықталған роботтар, алгоритм құрастыру және жарыс трассасы.',
+          interactables: [
+            { id: 'robot-arena', label: 'Робот Жарыс Алаңы', type: 'robot-sim' },
+            { id: 'robot-parts', label: 'Құрастыру Стенді', type: 'robot-bench' }
+          ]
+        },
+        {
+          id: 'room-stem',
+          name: 'STEM және Инженерия Зертханасы',
+          code: '103',
+          floor: 1,
+          icon: 'fa-gears',
+          color: '#10b981',
+          doorPos: { x: 12, y: 0, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 12, y: 0, z: 36 },
+          signText: 'STEM ЖӘНЕ ИНЖЕНЕРИЯ',
+          desc: 'Көпір конструкциялары, жел генераторы, күн панельдері және инженерлік сынақтар.',
+          interactables: [
+            { id: 'stem-bridge', label: 'Инженерлік Сынақ Стенді', type: 'stem-workbench' }
+          ]
+        },
+        {
+          id: 'room-physics',
+          name: 'Физика Зертханасы',
+          code: '104',
+          floor: 1,
+          icon: 'fa-bolt',
+          color: '#f59e0b',
+          doorPos: { x: 28, y: 0, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 28, y: 0, z: 36 },
+          signText: 'ФИЗИКА ЗЕРТХАНАСЫ',
+          desc: 'Маятник тербелісі, электр тізбектері, оптика және механика заңдары.',
+          interactables: [
+            { id: 'physics-circuits', label: 'Электр және Маятник Стенді', type: 'physics-sim' }
+          ]
+        },
+        {
+          id: 'room-chemistry',
+          name: 'Химия Зертханасы',
+          code: '105',
+          floor: 1,
+          icon: 'fa-flask-vial',
+          color: '#ec4899',
+          doorPos: { x: -28, y: 0, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: -28, y: 0, z: -36 },
+          signText: 'ХИМИЯ ЗЕРТХАНАСЫ',
+          desc: 'Периодтық жүйе, реакциялар визуализациясы, 3D молекулалар.',
+          interactables: [
+            { id: 'chem-table', label: 'Химиялық Тәжірибелік Үстел', type: 'chemistry-sim' }
+          ]
+        },
+        {
+          id: 'room-biology',
+          name: 'Биология Кабинеті',
+          code: '106',
+          floor: 1,
+          icon: 'fa-dna',
+          color: '#14b8a6',
+          doorPos: { x: -12, y: 0, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: -12, y: 0, z: -36 },
+          signText: 'БИОЛОГИЯ КАБИНЕТІ',
+          desc: 'Өсімдік және жануар жасушасының 3D модельдері, микроскоп, адам ағзасы.',
+          interactables: [
+            { id: 'bio-microscope', label: 'Цифрлық Микроскоп & Жасуша', type: 'biology-sim' }
+          ]
+        },
+        {
+          id: 'room-geography',
+          name: 'География Кабинеті',
+          code: '107',
+          floor: 1,
+          icon: 'fa-earth-asia',
+          color: '#6366f1',
+          doorPos: { x: 12, y: 0, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: 12, y: 0, z: -36 },
+          signText: 'ГЕОГРАФИЯ КАБИНЕТІ',
+          desc: '3D интерактивті глобус, Қазақстанның облыстары және климаттық аймақтар.',
+          interactables: [
+            { id: 'geo-globe', label: 'Интерактивті Цифрлық Глобус', type: 'geography-sim' }
+          ]
+        },
+        {
+          id: 'room-ecology',
+          name: 'Экология және Тұрақты Даму',
+          code: '108',
+          floor: 1,
+          icon: 'fa-leaf',
+          color: '#22c55e',
+          doorPos: { x: 28, y: 0, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: 28, y: 0, z: -36 },
+          signText: 'ЭКОЛОГИЯ ЖӘНЕ ТҰРАҚТЫ ДАМУ',
+          desc: 'Қалдықтарды сұрыптау, жасыл энергия үнемдеу, Эко-мектеп жобасы.',
+          interactables: [
+            { id: 'eco-sorting', label: 'Қалдықтарды Сұрыптау Стенді', type: 'ecology-sim' }
+          ]
+        }
+      ],
+
+      // 2-ҚАБАТ: Математика, Информатика, Тілдер және Гуманитарлық
+      floor2: [
+        {
+          id: 'room-math',
+          name: 'Математика Кабинеті',
+          code: '201',
+          floor: 2,
+          icon: 'fa-shapes',
+          color: '#38bdf8',
+          doorPos: { x: -28, y: 12, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -28, y: 12, z: 36 },
+          signText: 'МАТЕМАТИКА КАБИНЕТІ',
+          desc: '3D стереометрия, функция графиктері, алгебралық теңдеулер мен логика.',
+          interactables: [
+            { id: 'math-board', label: 'Геометрия және Графиктер Тақтасы', type: 'math-sim' }
+          ]
+        },
+        {
+          id: 'room-cs',
+          name: 'Информатика Кабинеті',
+          code: '202',
+          floor: 2,
+          icon: 'fa-laptop-code',
+          color: '#0284c7',
+          doorPos: { x: -12, y: 12, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -12, y: 12, z: 36 },
+          signText: 'ИНФОРМАТИКА ЖӘНЕ БАҒДАРЛАМАЛАУ',
+          desc: 'Python алгоритмдер симуляторы, сұрыптау анимациялары, киберқауіпсіздік.',
+          interactables: [
+            { id: 'cs-pc', label: 'Код және Алгоритмдер Терминалы', type: 'cs-sim' }
+          ]
+        },
+        {
+          id: 'room-english',
+          name: 'Ағылшын Тілі Кабинеті',
+          code: '203',
+          floor: 2,
+          icon: 'fa-language',
+          color: '#8b5cf6',
+          doorPos: { x: 12, y: 12, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 12, y: 12, z: 36 },
+          signText: 'ENGLISH LANGUAGE LAB',
+          desc: 'Vocabulary builder, listening tasks, phrase constructor, grammar match.',
+          interactables: [
+            { id: 'en-screen', label: 'Digital Language Board', type: 'english-sim' }
+          ]
+        },
+        {
+          id: 'room-kazakh',
+          name: 'Қазақ Тілі мен Әдебиеті',
+          code: '204',
+          floor: 2,
+          icon: 'fa-feather-pointed',
+          color: '#0ea5e9',
+          doorPos: { x: 28, y: 12, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 28, y: 12, z: 36 },
+          signText: 'ҚАЗАҚ ТІЛІ МЕН ӘДЕБИЕТІ',
+          desc: 'Сөз таптары, мақал-мәтелдер, ұлы ақын-жазушылар галереясы, әдеби хронология.',
+          interactables: [
+            { id: 'kz-board', label: 'Тіл мен Әдебиет Панелі', type: 'kazakh-sim' }
+          ]
+        },
+        {
+          id: 'room-history',
+          name: 'Қазақстан және Әлем Тарихы',
+          code: '205',
+          floor: 2,
+          icon: 'fa-landmark-dome',
+          color: '#d97706',
+          doorPos: { x: -28, y: 12, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: -28, y: 12, z: -36 },
+          signText: 'ТАРИХ ЖӘНЕ МҰРАЖАЙ',
+          desc: 'Тарихи уақыт шкаласы, цифрлық жәдігерлер, өркениеттер картасы.',
+          interactables: [
+            { id: 'history-timeline', label: 'Тарихи Хронология Экрандары', type: 'history-sim' }
+          ]
+        },
+        {
+          id: 'room-finance',
+          name: 'Қаржылық Сауаттылық және Құқық',
+          code: '206',
+          floor: 2,
+          icon: 'fa-coins',
+          color: '#16a34a',
+          doorPos: { x: -12, y: 12, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: -12, y: 12, z: -36 },
+          signText: 'ҚАРЖЫ ЖӘНЕ ҚҰҚЫҚ НЕГІЗДЕРІ',
+          desc: 'Бюджетті жоспарлау, виртуалды нарық, азаматтық құқық пен міндеттер.',
+          interactables: [
+            { id: 'fin-market', label: 'Бюджет Жоспарлаушы & Заң Тақтасы', type: 'finance-sim' }
+          ]
+        },
+        {
+          id: 'room-russian',
+          name: 'Орыс Тілі және Әдебиеті',
+          code: '207',
+          floor: 2,
+          icon: 'fa-book-open-reader',
+          color: '#a855f7',
+          doorPos: { x: 12, y: 12, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: 12, y: 12, z: -36 },
+          signText: 'РУССКИЙ ЯЗЫК И ЛИТЕРАТУРА',
+          desc: 'Синтаксис, классикалық шығармалар кейіпкерлері, сөздік қорын дамыту.',
+          interactables: [
+            { id: 'ru-board', label: 'Интерактивная Грамматика', type: 'russian-sim' }
+          ]
+        },
+        {
+          id: 'room-inclusion',
+          name: 'Инклюзивті Білім және Психологиялық Қолдау',
+          code: '208',
+          floor: 2,
+          icon: 'fa-hand-holding-heart',
+          color: '#f43f5e',
+          doorPos: { x: 28, y: 12, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: 28, y: 12, z: -36 },
+          signText: 'ИНКЛЮЗИВТІ БІЛІМ БЕРУ ОРТАЛЫҒЫ',
+          desc: 'Қолжетімді цифрлық орта, сенсорлық релаксация, эмоцияларды реттеу.',
+          interactables: [
+            { id: 'inc-station', label: 'Сенсорлық Интерактивті Құралдар', type: 'inclusion-sim' }
+          ]
+        }
+      ],
+
+      // 3-ҚАБАТ: Шығармашылық, Өнер, Спорт және Медиа
+      floor3: [
+        {
+          id: 'room-music',
+          name: 'Музыка Кабинеті',
+          code: '301',
+          floor: 3,
+          icon: 'fa-music',
+          color: '#ec4899',
+          doorPos: { x: -28, y: 24, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -28, y: 24, z: 36 },
+          signText: 'МУЗЫКА ЖӘНЕ АКУСТИКА',
+          desc: 'Виртуалды синтезатор/пианино, қазақтың ұлттық аспаптары, ырғақ пен нота.',
+          interactables: [
+            { id: 'music-piano', label: 'Виртуалды Фортепиано Стенді', type: 'music-sim' }
+          ]
+        },
+        {
+          id: 'room-art',
+          name: 'Бейнелеу Өнері және Дизайн',
+          code: '302',
+          floor: 3,
+          icon: 'fa-palette',
+          color: '#f97316',
+          doorPos: { x: -12, y: 24, z: 24 },
+          doorRot: 0,
+          roomPos: { x: -12, y: 24, z: 36 },
+          signText: 'БЕЙНЕЛЕУ ӨНЕРІ ЖӘНЕ ДИЗАЙН',
+          desc: 'Виртуалды мольберт, бояулар түсі мен үйлесімі, 3D пішіндер композициясы.',
+          interactables: [
+            { id: 'art-canvas', label: 'Интерактивті Мольберт & Палитра', type: 'art-sim' }
+          ]
+        },
+        {
+          id: 'room-media',
+          name: 'Медиастудия және Телеорталық',
+          code: '303',
+          floor: 3,
+          icon: 'fa-video',
+          color: '#06b6d4',
+          doorPos: { x: 12, y: 24, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 12, y: 24, z: 36 },
+          signText: 'ЦИФРЛЫҚ МЕДИАСТУДИЯ',
+          desc: 'Жаңалықтар түсіру, телекамералар, жасыл фон (хромакей), монтаж үстелі.',
+          interactables: [
+            { id: 'media-desk', label: 'Жаңалықтар Түсіру Басқару Бөлімі', type: 'media-sim' }
+          ]
+        },
+        {
+          id: 'room-firstaid',
+          name: 'Алғашқы Көмек және Денсаулық',
+          code: '304',
+          floor: 3,
+          icon: 'fa-kit-medical',
+          color: '#ef4444',
+          doorPos: { x: 28, y: 24, z: 24 },
+          doorRot: 0,
+          roomPos: { x: 28, y: 24, z: 36 },
+          signText: 'АЛҒАШҚЫ КӨМЕК ЖӘНЕ ДЕНСАУЛЫҚ',
+          desc: 'Шұғыл медициналық әрекеттер алгоритмі, салауатты өмір салты, қауіпсіздік.',
+          interactables: [
+            { id: 'aid-dummy', label: 'Шұғыл Әрекет Симуляторы', type: 'firstaid-sim' }
+          ]
+        },
+        {
+          id: 'room-sport',
+          name: 'Спорт Залы және Атлетика Кешені',
+          code: '305',
+          floor: 3,
+          icon: 'fa-basketball',
+          color: '#eab308',
+          doorPos: { x: -20, y: 24, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: -20, y: 24, z: -36 },
+          signText: 'СПОРТ КЕШЕНІ ЖӘНЕ ДЕНЕ ШЫНЫҚТЫРУ',
+          desc: 'Баскетбол, футбол, волейбол ережелері, қозғалыс физиологиясы мен рекордтар.',
+          interactables: [
+            { id: 'sport-board', label: 'Интерактивті Спорт Бағанасы', type: 'sport-sim' }
+          ]
+        },
+        {
+          id: 'room-admin',
+          name: 'Мектептің Цифрлық Басқару Орталығы',
+          code: '306',
+          floor: 3,
+          icon: 'fa-shield-halved',
+          color: '#64748b',
+          doorPos: { x: 20, y: 24, z: -24 },
+          doorRot: Math.PI,
+          roomPos: { x: 20, y: 24, z: -36 },
+          signText: 'ЦИФРЛЫҚ БАСҚАРУ ЖӘНЕ ҚАУІПСІЗДІК',
+          desc: 'Мектеп камералары, энергетикалық мониторинг, смарт-қоңырау, цифрлық жүйе.',
+          interactables: [
+            { id: 'admin-dash', label: 'Мектептің Басқару Панелі', type: 'admin-sim' }
+          ]
+        }
+      ]
+    };
+
+    // Flattened array of all rooms
+    const ALL_ROOMS = [
+      ...SCHOOL_DATA.floor1,
+      ...SCHOOL_DATA.floor2,
+      ...SCHOOL_DATA.floor3
+    ];
+
+    /**
+     * 3D WebGL Application Main Controller
+     */
+    class DigitalSchoolApp {
+      constructor() {
+        this.container = document.getElementById('canvas-container');
+        this.currentFloor = 1;
+        this.isInSchool = false;
+        this.cameraMode = 'exterior'; // 'exterior', 'fps'
+
+        // Three.js Core
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = new THREE.Clock();
+
+        // Architectural Elements
+        this.doors = []; // { mesh, isOpen, targetRot, roomData }
+        this.interactableObjects = []; // 3D triggers
+        this.colliders = []; // Bounding boxes for player movement collision
+
+        // Student Character (Қабдолла Манас) 3D Model
+        this.studentCharacter = null;
+        this.isThirdPerson = true; // default 3rd-person avatar walk
+
+        // FPS / 3rd-Person Player controls
+        this.player = {
+          position: new THREE.Vector3(0, 0.8, -60),
+          velocity: new THREE.Vector3(),
+          rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+          speed: 13,
+          height: 1.8,
+          radius: 0.45,
+          walkCycle: 0
+        };
+
+        this.keys = {};
+        this.isPointerLocked = false;
+        this.activeInteractable = null;
+        this.currentOpenedRoom = null;
+
+        // Mobile touch control state
+        this.touchMove = { x: 0, y: 0 };
+
+        this.initThree();
+        this.buildSchoolEnvironment();
+        this.buildStudentAvatar();
+        this.setupEventListeners();
+        this.setupTouchControls();
+        this.setupModals();
+
+        // Start Animation Loop
+        this.animate = this.animate.bind(this);
+        requestAnimationFrame(this.animate);
+      }
+
+      initThree() {
+        // Scene setup
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0c1222);
+        this.scene.fog = new THREE.FogExp2(0x0c1222, 0.007);
+
+        // Camera setup
+        this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 18, -95);
+        this.camera.lookAt(0, 10, 0);
+
+        // Renderer setup
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.container.appendChild(this.renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.7);
+        this.scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+        dirLight.position.set(60, 100, -50);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 250;
+        dirLight.shadow.camera.left = -90;
+        dirLight.shadow.camera.right = 90;
+        dirLight.shadow.camera.top = 90;
+        dirLight.shadow.camera.bottom = -90;
+        this.scene.add(dirLight);
+
+        // Warm sunlight accent for lush garden
+        const sunAccent = new THREE.DirectionalLight(0xfef08a, 0.6);
+        sunAccent.position.set(-60, 60, -80);
+        this.scene.add(sunAccent);
+
+        // Blue accent lights for scifi school look
+        const blueLight = new THREE.PointLight(0x06b6d4, 1.2, 80);
+        blueLight.position.set(0, 6, 0);
+        this.scene.add(blueLight);
+
+        // Exterior Orbit Camera setup
+        this.exteriorAngle = 0;
+        this.targetExteriorAngle = 0;
+        this.exteriorDistance = 110;
+        this.exteriorHeight = 28;
+        this.isOrbitDragging = false;
+        this.orbitPrevX = 0;
+
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+
+      /**
+       * Generate Complete 3-Floor Architectural Geometry with Walls, Rooms, Hallways, and Doors
+       */
+      buildSchoolEnvironment() {
+        // Ground & Campus Courtyard
+        const groundGeo = new THREE.PlaneGeometry(360, 360);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a1120, roughness: 0.9 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.05;
+        ground.receiveShadow = true;
+        this.scene.add(ground);
+
+        // Courtyard Green Areas & Trees & Flowers
+        this.buildCampusLandscape();
+
+        // Main Entrance Arch & Scifi Marquee Billboard
+        this.buildEntranceMarquee();
+
+        // Build 3 Floors of School
+        for (let f = 1; f <= 3; f++) {
+          this.buildFloor(f);
+        }
+
+        // Lift & Stairwell Architecture in Central Hub
+        this.buildCentralElevatorCore();
+      }
+
+      buildCampusLandscape() {
+        // Lush Green Grass Lawns
+        const lawnMat = new THREE.MeshStandardMaterial({ 
+          color: 0x15803d, 
+          roughness: 0.8,
+          metalness: 0.05
+        });
+        const lightLawnMat = new THREE.MeshStandardMaterial({ 
+          color: 0x16a34a, 
+          roughness: 0.7 
+        });
+
+        // Main Front Terraces
+        const lawn1 = new THREE.Mesh(new THREE.BoxGeometry(65, 0.35, 45), lawnMat);
+        lawn1.position.set(-48, 0.15, -65);
+        lawn1.receiveShadow = true;
+        this.scene.add(lawn1);
+
+        const lawn2 = new THREE.Mesh(new THREE.BoxGeometry(65, 0.35, 45), lawnMat);
+        lawn2.position.set(48, 0.15, -65);
+        lawn2.receiveShadow = true;
+        this.scene.add(lawn2);
+
+        // Central Decorative Roundabouts & Flower Beds
+        const roundLawn = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.4, 32), lightLawnMat);
+        roundLawn.position.set(0, 0.2, -68);
+        this.scene.add(roundLawn);
+
+        // Futuristic Hologram Fountain / Monument in roundabout
+        const fountainBase = new THREE.Mesh(new THREE.CylinderGeometry(5, 6, 0.8, 24), new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 }));
+        fountainBase.position.set(0, 0.6, -68);
+        this.scene.add(fountainBase);
+
+        const waterGlow = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.2, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 }));
+        waterGlow.position.set(0, 1.05, -68);
+        this.scene.add(waterGlow);
+
+        const globeHolo = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 1), new THREE.MeshStandardMaterial({ color: 0x06b6d4, wireframe: true, emissive: 0x0891b2 }));
+        globeHolo.position.set(0, 4.2, -68);
+        this.scene.add(globeHolo);
+        this.campusHoloGlobe = globeHolo;
+
+        // Multi-colored Flower Clusters on lawns
+        const flowerColors = [0xf43f5e, 0xfacc15, 0xec4899, 0xa855f7, 0x38bdf8];
+        for (let i = 0; i < 35; i++) {
+          const fx = (Math.random() - 0.5) * 50 + (Math.random() > 0.5 ? -48 : 48);
+          const fz = -48 - Math.random() * 32;
+          const col = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+          const flower = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: col, roughness: 0.3 }));
+          flower.position.set(fx, 0.6, fz);
+          this.scene.add(flower);
+        }
+
+        // Varied Lush 3D Trees (Pine & Deciduous)
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
+        const foliageMat1 = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.4 });
+        const foliageMat2 = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.5 });
+        const foliageMat3 = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.3 });
+
+        const treeCoords = [
+          [-75, -50], [-70, -70], [-55, -85], [-35, -85], [-25, -65],
+          [75, -50], [70, -70], [55, -85], [35, -85], [25, -65],
+          [-78, -30], [78, -30], [-78, 10], [78, 10], [-78, 40], [78, 40]
+        ];
+
+        treeCoords.forEach(([x, z], idx) => {
+          const h = 3.5 + (idx % 3) * 0.8;
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.65, h), trunkMat);
+          trunk.position.set(x, h / 2, z);
+          trunk.castShadow = true;
+          this.scene.add(trunk);
+
+          const folMat = idx % 3 === 0 ? foliageMat1 : idx % 3 === 1 ? foliageMat2 : foliageMat3;
+          const r = 2.2 + (idx % 2) * 0.7;
+          const foliage = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 1), folMat);
+          foliage.position.set(x, h + r * 0.8, z);
+          foliage.castShadow = true;
+          this.scene.add(foliage);
+        });
+
+        // Modern Campus Solar Flower Trees & Streetlamps
+        for (let lz = -80; lz <= -28; lz += 16) {
+          [-14, 14].forEach(lx => {
+            const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 6), new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 }));
+            lampPost.position.set(lx, 3, lz);
+            this.scene.add(lampPost);
+
+            const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x0ea5e9, metalness: 0.9 }));
+            lampHead.position.set(lx, 6, lz);
+            this.scene.add(lampHead);
+
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshBasicMaterial({ color: 0xe0f2fe }));
+            bulb.position.set(lx, 5.8, lz);
+            this.scene.add(bulb);
+          });
+        }
+
+        // Yellow Electric School Bus in Parking area
+        this.buildSchoolBus(-60, 0, -45);
+
+        // Modern Stone Paved Pathways
+        const pathMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+        const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(18, 75), pathMat);
+        mainPath.rotation.x = -Math.PI / 2;
+        mainPath.position.set(0, 0.05, -58);
+        mainPath.receiveShadow = true;
+        this.scene.add(mainPath);
+
+        // Diagonal Garden Pavers
+        const crossPath1 = new THREE.Mesh(new THREE.PlaneGeometry(100, 5), pathMat);
+        crossPath1.rotation.x = -Math.PI / 2;
+        crossPath1.position.set(0, 0.06, -68);
+        this.scene.add(crossPath1);
+      }
+
+      buildSchoolBus(x, y, z) {
+        const busGroup = new THREE.Group();
+        busGroup.position.set(x, y, z);
+        busGroup.rotation.y = Math.PI / 3;
+
+        // Bus Chassis & Body
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4, metalness: 0.2 });
+        const blackMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.7 });
+
+        const body = new THREE.Mesh(new THREE.BoxGeometry(4.5, 3.2, 10), yellowMat);
+        body.position.y = 2.4;
+        busGroup.add(body);
+
+        const windows = new THREE.Mesh(new THREE.BoxGeometry(4.55, 1.2, 8.5), glassMat);
+        windows.position.y = 3.0;
+        busGroup.add(windows);
+
+        // Wheels
+        [[-2.3, 1, -3], [2.3, 1, -3], [-2.3, 1, 3], [2.3, 1, 3]].forEach(([wx, wy, wz]) => {
+          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 16), blackMat);
+          wheel.rotation.z = Math.PI / 2;
+          wheel.position.set(wx, wy, wz);
+          busGroup.add(wheel);
+        });
+
+        this.scene.add(busGroup);
+      }
+
+      buildEntranceMarquee() {
+        // Glass canopy entrance
+        const canopyMat = new THREE.MeshStandardMaterial({
+          color: 0x0284c7,
+          roughness: 0.1,
+          metalness: 0.8,
+          transparent: true,
+          opacity: 0.8
+        });
+        const canopy = new THREE.Mesh(new THREE.BoxGeometry(16, 0.8, 10), canopyMat);
+        canopy.position.set(0, 7, -22);
+        this.scene.add(canopy);
+
+        // Columns
+        const colMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.5 });
+        const col1 = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 7), colMat);
+        col1.position.set(-7, 3.5, -20);
+        this.scene.add(col1);
+
+        const col2 = col1.clone();
+        col2.position.set(7, 3.5, -20);
+        this.scene.add(col2);
+
+        // Marquee Signboard Text
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 14;
+        ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 58px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('«БОЛАШАҚТЫҢ ЦИФРЛЫҚ МЕКТЕБІ»', canvas.width / 2, 120);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '34px sans-serif';
+        ctx.fillText('DIGITAL SMART SCHOOL — 3D INTERACTIVE MODEL', canvas.width / 2, 185);
+
+        const textTex = new THREE.CanvasTexture(canvas);
+        const signMat = new THREE.MeshBasicMaterial({ map: textTex });
+        const signMesh = new THREE.Mesh(new THREE.BoxGeometry(18, 4.5, 0.5), signMat);
+        signMesh.position.set(0, 9.8, -20);
+        this.scene.add(signMesh);
+
+        // Main Entrance Double Sliding Door Mockup at z = -20
+        this.buildMainFrontDoor();
+      }
+
+      buildMainFrontDoor() {
+        const doorFrame = new THREE.Mesh(
+          new THREE.BoxGeometry(8, 6, 0.6),
+          new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 })
+        );
+        doorFrame.position.set(0, 3, -20);
+        this.scene.add(doorFrame);
+
+        // Glass sliding door wings
+        const doorGlassMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.65,
+          roughness: 0.1
+        });
+        const leftWing = new THREE.Mesh(new THREE.BoxGeometry(3.6, 5.5, 0.2), doorGlassMat);
+        leftWing.position.set(-1.8, 3, -20);
+        this.scene.add(leftWing);
+
+        const rightWing = new THREE.Mesh(new THREE.BoxGeometry(3.6, 5.5, 0.2), doorGlassMat);
+        rightWing.position.set(1.8, 3, -20);
+        this.scene.add(rightWing);
+
+        this.mainEntranceDoors = { left: leftWing, right: rightWing, openDist: 0 };
+      }
+
+      buildFloor(floorNum) {
+        const floorHeight = 12; // Each floor is 12 units high
+        const yBase = (floorNum - 1) * floorHeight;
+
+        // Floor Slab (80m wide, 100m long)
+        const slabMat = new THREE.MeshStandardMaterial({
+          color: floorNum === 1 ? 0x1e293b : floorNum === 2 ? 0x0f172a : 0x1e1b4b,
+          roughness: 0.4
+        });
+        const floorMesh = new THREE.Mesh(new THREE.BoxGeometry(84, 0.8, 104), slabMat);
+        floorMesh.position.set(0, yBase + 0.4, 0);
+        floorMesh.receiveShadow = true;
+        this.scene.add(floorMesh);
+
+        // Ceiling Slab
+        const ceilingMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(84, 0.5, 104),
+          new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 })
+        );
+        ceilingMesh.position.set(0, yBase + floorHeight - 0.25, 0);
+        this.scene.add(ceilingMesh);
+
+        // Exterior Glass & Concrete Facade
+        this.buildFloorExteriorWalls(yBase, floorHeight);
+
+        // Central Hallway Corridor Floor (Longitudinal z: -48 to 48, corridor width: 14)
+        const hallTileMat = new THREE.MeshStandardMaterial({
+          color: 0xf1f5f9,
+          roughness: 0.2,
+          metalness: 0.1
+        });
+        const hallFloor = new THREE.Mesh(new THREE.PlaneGeometry(12, 94), hallTileMat);
+        hallFloor.rotation.x = -Math.PI / 2;
+        hallFloor.position.set(0, yBase + 0.82, 0);
+        this.scene.add(hallFloor);
+
+        // Corridor Lighting Strips
+        for (let z = -40; z <= 40; z += 15) {
+          const ceilingLamp = new THREE.Mesh(
+            new THREE.BoxGeometry(2, 0.2, 6),
+            new THREE.MeshBasicMaterial({ color: 0xe0f2fe })
+          );
+          ceilingLamp.position.set(0, yBase + floorHeight - 0.6, z);
+          this.scene.add(ceilingLamp);
+
+          const pLight = new THREE.PointLight(0xbae6fd, 0.6, 25);
+          pLight.position.set(0, yBase + floorHeight - 1.2, z);
+          this.scene.add(pLight);
+        }
+
+        // Build Classrooms on this floor
+        const rooms = SCHOOL_DATA[`floor${floorNum}`] || [];
+        rooms.forEach((roomData) => {
+          this.buildClassroom(roomData, yBase, floorHeight);
+        });
+
+        // Hallway Benches and Information Terminals
+        this.buildCorridorAmenities(yBase);
+      }
+
+      buildFloorExteriorWalls(yBase, floorHeight) {
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7 });
+        const glassMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.45,
+          roughness: 0.1
+        });
+
+        // Outer bounds: X: -42 to 42, Z: -52 to 52
+        // North & South walls
+        const wallN = new THREE.Mesh(new THREE.BoxGeometry(84, floorHeight, 1.5), wallMat);
+        wallN.position.set(0, yBase + floorHeight / 2, 51.5);
+        this.scene.add(wallN);
+
+        const wallS = new THREE.Mesh(new THREE.BoxGeometry(84, floorHeight, 1.5), wallMat);
+        wallS.position.set(0, yBase + floorHeight / 2, -51.5);
+        this.scene.add(wallS);
+
+        // East & West walls (Large Panoramic Windows)
+        const wallW = new THREE.Mesh(new THREE.BoxGeometry(1.5, floorHeight, 104), glassMat);
+        wallW.position.set(-41.5, yBase + floorHeight / 2, 0);
+        this.scene.add(wallW);
+
+        const wallE = new THREE.Mesh(new THREE.BoxGeometry(1.5, floorHeight, 104), glassMat);
+        wallE.position.set(41.5, yBase + floorHeight / 2, 0);
+        this.scene.add(wallE);
+
+        // Add colliders for outer envelope
+        this.colliders.push(new THREE.Box3().setFromObject(wallN));
+        this.colliders.push(new THREE.Box3().setFromObject(wallS));
+        this.colliders.push(new THREE.Box3().setFromObject(wallW));
+        this.colliders.push(new THREE.Box3().setFromObject(wallE));
+      }
+
+      /**
+       * Construct an individual 3D Classroom with its walls, interior furnitures, interactive desks, and real HINGED DOOR
+       */
+      buildClassroom(room, yBase, floorHeight) {
+        const roomW = 18;
+        const roomH = floorHeight - 0.8;
+        const roomD = 22;
+        const { x, z } = room.roomPos;
+        const yCenter = yBase + roomH / 2 + 0.8;
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+        const accentMat = new THREE.MeshStandardMaterial({ color: room.color, roughness: 0.5 });
+
+        // Room Floor
+        const roomFloor = new THREE.Mesh(
+          new THREE.PlaneGeometry(roomW - 0.4, roomD - 0.4),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6 })
+        );
+        roomFloor.rotation.x = -Math.PI / 2;
+        roomFloor.position.set(x, yBase + 0.84, z);
+        this.scene.add(roomFloor);
+
+        // Corridor dividing wall with a doorway opening
+        // Corridor is at z = +/- 24.
+        const isNorthWing = z > 0;
+        const frontWallZ = isNorthWing ? z - roomD / 2 : z + roomD / 2;
+
+        // Two side wall segments around door (door width 3.2m, height 5m)
+        const sideW = (roomW - 3.4) / 2;
+        const wallLeft = new THREE.Mesh(new THREE.BoxGeometry(sideW, roomH, 0.8), wallMat);
+        wallLeft.position.set(x - roomW / 2 + sideW / 2, yCenter, frontWallZ);
+        this.scene.add(wallLeft);
+        this.colliders.push(new THREE.Box3().setFromObject(wallLeft));
+
+        const wallRight = new THREE.Mesh(new THREE.BoxGeometry(sideW, roomH, 0.8), wallMat);
+        wallRight.position.set(x + roomW / 2 - sideW / 2, yCenter, frontWallZ);
+        this.scene.add(wallRight);
+        this.colliders.push(new THREE.Box3().setFromObject(wallRight));
+
+        // Lintel above the door
+        const lintelH = roomH - 5.2;
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(3.6, lintelH, 0.8), wallMat);
+        lintel.position.set(x, yBase + 5.2 + lintelH / 2 + 0.8, frontWallZ);
+        this.scene.add(lintel);
+        this.colliders.push(new THREE.Box3().setFromObject(lintel));
+
+        // Back Wall (Classroom Blackboard & Screen)
+        const backWallZ = isNorthWing ? z + roomD / 2 : z - roomD / 2;
+        const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, roomH, 0.8), wallMat);
+        backWall.position.set(x, yCenter, backWallZ);
+        this.scene.add(backWall);
+        this.colliders.push(new THREE.Box3().setFromObject(backWall));
+
+        // Lateral Dividing Walls
+        const wallDivLeft = new THREE.Mesh(new THREE.BoxGeometry(0.8, roomH, roomD), wallMat);
+        wallDivLeft.position.set(x - roomW / 2, yCenter, z);
+        this.scene.add(wallDivLeft);
+        this.colliders.push(new THREE.Box3().setFromObject(wallDivLeft));
+
+        const wallDivRight = new THREE.Mesh(new THREE.BoxGeometry(0.8, roomH, roomD), wallMat);
+        wallDivRight.position.set(x + roomW / 2, yCenter, z);
+        this.scene.add(wallDivRight);
+        this.colliders.push(new THREE.Box3().setFromObject(wallDivRight));
+
+        // Interactive Digital Board on Back Wall
+        const boardCanvas = document.createElement('canvas');
+        boardCanvas.width = 512;
+        boardCanvas.height = 256;
+        const bCtx = boardCanvas.getContext('2d');
+        bCtx.fillStyle = '#090d16';
+        bCtx.fillRect(0, 0, 512, 256);
+        bCtx.strokeStyle = room.color;
+        bCtx.lineWidth = 10;
+        bCtx.strokeRect(5, 5, 502, 246);
+        bCtx.fillStyle = '#ffffff';
+        bCtx.font = 'bold 32px sans-serif';
+        bCtx.textAlign = 'center';
+        bCtx.fillText(room.name, 256, 80);
+        bCtx.fillStyle = room.color;
+        bCtx.font = '22px sans-serif';
+        bCtx.fillText(`[Кабинет №${room.code}] — Интерактивті Тақта`, 256, 140);
+        bCtx.fillStyle = '#f59e0b';
+        bCtx.font = 'bold 18px sans-serif';
+        bCtx.fillText('Әзірлеуші: Қабдолла Манас', 256, 180);
+        bCtx.fillStyle = '#94a3b8';
+        bCtx.font = '16px sans-serif';
+        bCtx.fillText('E пернесін басып тәжірибе жасаңыз', 256, 215);
+
+        const boardTex = new THREE.CanvasTexture(boardCanvas);
+        const boardMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(10, 4.5, 0.2),
+          new THREE.MeshBasicMaterial({ map: boardTex })
+        );
+        boardMesh.position.set(x, yBase + 4.5, isNorthWing ? backWallZ - 0.5 : backWallZ + 0.5);
+        if (!isNorthWing) boardMesh.rotation.y = Math.PI;
+        this.scene.add(boardMesh);
+
+        // Door Signboard above Door in Corridor
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 512;
+        signCanvas.height = 128;
+        const sCtx = signCanvas.getContext('2d');
+        sCtx.fillStyle = '#0f172a';
+        sCtx.fillRect(0, 0, 512, 128);
+        sCtx.strokeStyle = room.color;
+        sCtx.lineWidth = 6;
+        sCtx.strokeRect(4, 4, 504, 120);
+        sCtx.fillStyle = '#ffffff';
+        sCtx.font = 'bold 24px sans-serif';
+        sCtx.textAlign = 'center';
+        sCtx.fillText(room.signText, 256, 50);
+        sCtx.fillStyle = room.color;
+        sCtx.font = 'bold 28px sans-serif';
+        sCtx.fillText(`№${room.code}`, 256, 95);
+
+        const signTex = new THREE.CanvasTexture(signCanvas);
+        const signPlate = new THREE.Mesh(
+          new THREE.BoxGeometry(5.2, 1.8, 0.2),
+          new THREE.MeshBasicMaterial({ map: signTex })
+        );
+        signPlate.position.set(x, yBase + 6.2, isNorthWing ? frontWallZ - 0.5 : frontWallZ + 0.5);
+        if (!isNorthWing) signPlate.rotation.y = Math.PI;
+        this.scene.add(signPlate);
+
+        // HINGED 3D REAL DOOR (Pivot at door frame side)
+        this.buildHingedDoor(room, x, yBase, frontWallZ, isNorthWing);
+
+        // Classroom Furnitures & Specific Subject Models
+        this.buildRoomFurnitures(room, x, yBase, z, isNorthWing);
+      }
+
+      /**
+       * Realistic Hinged Door that swings open upon interaction
+       */
+      buildHingedDoor(room, x, yBase, frontWallZ, isNorthWing) {
+        const doorW = 3.0;
+        const doorH = 5.0;
+        const doorD = 0.25;
+
+        // Pivot object at the hinge location
+        const pivot = new THREE.Group();
+        pivot.position.set(x - doorW / 2, yBase + 0.8, frontWallZ);
+
+        // Door geometry offset so hinge is at edge (x = doorW / 2)
+        const doorMat = new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          metalness: 0.3,
+          roughness: 0.6
+        });
+        const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, doorD), doorMat);
+        doorMesh.position.set(doorW / 2, doorH / 2, 0);
+        doorMesh.castShadow = true;
+
+        // Door handle
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9, roughness: 0.1 });
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6), handleMat);
+        handle.rotation.z = Math.PI / 2;
+        handle.position.set(doorW - 0.3, 0, 0.2);
+        doorMesh.add(handle);
+
+        pivot.add(doorMesh);
+        this.scene.add(pivot);
+
+        // Physical door collider when closed
+        const doorColliderBox = new THREE.Box3();
+        doorColliderBox.setFromCenterAndSize(
+          new THREE.Vector3(x, yBase + doorH / 2 + 0.8, frontWallZ),
+          new THREE.Vector3(doorW, doorH, doorD * 2)
+        );
+
+        const doorRecord = {
+          pivot: pivot,
+          doorMesh: doorMesh,
+          isOpen: false,
+          currentAngle: 0,
+          targetAngle: 0,
+          collider: doorColliderBox,
+          frontWallZ: frontWallZ,
+          room: room,
+          isNorthWing: isNorthWing
+        };
+
+        this.doors.push(doorRecord);
+
+        // Add to interactables
+        this.interactableObjects.push({
+          type: 'door',
+          position: new THREE.Vector3(x, yBase + 2.5, frontWallZ),
+          doorRecord: doorRecord,
+          name: `${room.name} Есігі`
+        });
+      }
+
+      /**
+       * Classroom Furniture, Student Benches, Subject-Specific Apparatus
+       * (REDUCED SIZE AND WIDE AISLES SO USERS CAN FREELY WALK TO THE BLACKBOARD)
+       */
+      buildRoomFurnitures(room, x, yBase, z, isNorthWing) {
+        const deskMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
+
+        // Compact student desks pushed closer to the side walls to create a wide central corridor (3m+)
+        const zOffsets = isNorthWing ? [z - 4.5, z + 4.5] : [z + 4.5, z - 4.5];
+        zOffsets.forEach(rowZ => {
+          [-5.6, 5.6].forEach(rowX => {
+            const desk = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 1.2), deskMat);
+            desk.position.set(x + rowX, yBase + 1.4, rowZ);
+            this.scene.add(desk);
+            this.colliders.push(new THREE.Box3().setFromObject(desk));
+
+            // Small monitor on desk
+            const monitor = new THREE.Mesh(
+              new THREE.BoxGeometry(0.8, 0.6, 0.1),
+              new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+            );
+            monitor.position.set(x + rowX, yBase + 2.3, rowZ);
+            this.scene.add(monitor);
+          });
+        });
+
+        // Compact Center Interactive Station (Made much smaller so users don't get blocked)
+        const stationMat = new THREE.MeshStandardMaterial({
+          color: room.color,
+          roughness: 0.4,
+          metalness: 0.6
+        });
+        const mainStation = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.2, 1.1, 16), stationMat);
+        mainStation.position.set(x, yBase + 1.35, z);
+        this.scene.add(mainStation);
+        this.colliders.push(new THREE.Box3().setFromObject(mainStation));
+
+        // Subject Specific Central 3D Model Showcase
+        this.buildSubjectShowcaseModel(room, x, yBase + 2.1, z);
+
+        // Add interactive trigger for this laboratory station
+        this.interactableObjects.push({
+          type: 'station',
+          position: new THREE.Vector3(x, yBase + 2.2, z),
+          room: room,
+          name: `${room.name} — Тәжірибелік Жұмыс Орыны`
+        });
+      }
+
+      /**
+       * 3D Avatar representing the Student "Қабдолла Манас"
+       * Styled faithfully according to the photo: dark blue school vest, white collared shirt, dark trousers
+       */
+      buildStudentAvatar() {
+        const student = new THREE.Group();
+
+        // Materials
+        const vestMat = new THREE.MeshStandardMaterial({ color: 0x0f1c3f, roughness: 0.6 }); // dark navy vest
+        const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 }); // crisp white shirt
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.7 }); // natural skin tone
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.9 }); // dark short hair
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.8 }); // school trousers
+        const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
+
+        // Torso / Shirt & Vest
+        const torsoGroup = new THREE.Group();
+        const shirt = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.85, 0.4), shirtMat);
+        shirt.position.y = 1.3;
+        torsoGroup.add(shirt);
+
+        // Blue vest worn over shirt (open V-neck)
+        const vestBack = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.82, 0.15), vestMat);
+        vestBack.position.set(0, 1.3, -0.14);
+        torsoGroup.add(vestBack);
+
+        const vestLeft = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.82, 0.38), vestMat);
+        vestLeft.position.set(-0.26, 1.3, 0.02);
+        torsoGroup.add(vestLeft);
+
+        const vestRight = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.82, 0.38), vestMat);
+        vestRight.position.set(0.26, 1.3, 0.02);
+        torsoGroup.add(vestRight);
+
+        // White Collar
+        const collar = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.32), shirtMat);
+        collar.position.set(0, 1.76, 0.04);
+        torsoGroup.add(collar);
+
+        student.add(torsoGroup);
+
+        // Head & Face
+        const headGroup = new THREE.Group();
+        headGroup.position.set(0, 2.05, 0);
+
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.52, 0.46), skinMat);
+        headGroup.add(head);
+
+        // Short neat dark hair (matching the portrait photo)
+        const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.5), hairMat);
+        hairTop.position.set(0, 0.26, -0.02);
+        headGroup.add(hairTop);
+
+        const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.38, 0.12), hairMat);
+        hairBack.position.set(0, 0.05, -0.2);
+        headGroup.add(hairBack);
+
+        // Eyes & Eyebrows
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.02), eyeMat);
+        eyeL.position.set(-0.12, 0.05, 0.24);
+        headGroup.add(eyeL);
+
+        const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.02), eyeMat);
+        eyeR.position.set(0.12, 0.05, 0.24);
+        headGroup.add(eyeR);
+
+        student.add(headGroup);
+
+        // Arms (White sleeves with hands)
+        const armGeo = new THREE.BoxGeometry(0.18, 0.72, 0.18);
+        
+        const leftArmGroup = new THREE.Group();
+        leftArmGroup.position.set(-0.46, 1.65, 0);
+        const leftArmMesh = new THREE.Mesh(armGeo, shirtMat);
+        leftArmMesh.position.y = -0.32;
+        leftArmGroup.add(leftArmMesh);
+        const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.14), skinMat);
+        leftHand.position.y = -0.72;
+        leftArmGroup.add(leftHand);
+        student.add(leftArmGroup);
+
+        const rightArmGroup = new THREE.Group();
+        rightArmGroup.position.set(0.46, 1.65, 0);
+        const rightArmMesh = new THREE.Mesh(armGeo, shirtMat);
+        rightArmMesh.position.y = -0.32;
+        rightArmGroup.add(rightArmMesh);
+        const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.14), skinMat);
+        rightHand.position.y = -0.72;
+        rightArmGroup.add(rightHand);
+        student.add(rightArmGroup);
+
+        // Legs (Navy/black trousers and black shoes)
+        const legGeo = new THREE.BoxGeometry(0.24, 0.85, 0.24);
+
+        const leftLegGroup = new THREE.Group();
+        leftLegGroup.position.set(-0.18, 0.88, 0);
+        const leftLegMesh = new THREE.Mesh(legGeo, pantsMat);
+        leftLegMesh.position.y = -0.4;
+        leftLegGroup.add(leftLegMesh);
+        const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.36), shoeMat);
+        leftShoe.position.set(0, -0.84, 0.06);
+        leftLegGroup.add(leftShoe);
+        student.add(leftLegGroup);
+
+        const rightLegGroup = new THREE.Group();
+        rightLegGroup.position.set(0.18, 0.88, 0);
+        const rightLegMesh = new THREE.Mesh(legGeo, pantsMat);
+        rightLegMesh.position.y = -0.4;
+        rightLegGroup.add(rightLegMesh);
+        const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.36), shoeMat);
+        rightShoe.position.set(0, -0.84, 0.06);
+        rightLegGroup.add(rightShoe);
+        student.add(rightLegGroup);
+
+        // Name tag hovering above student
+        const tagCanvas = document.createElement('canvas');
+        tagCanvas.width = 256;
+        tagCanvas.height = 64;
+        const tCtx = tagCanvas.getContext('2d');
+        tCtx.fillStyle = '#0f172a';
+        tCtx.fillRect(0, 0, 256, 64);
+        tCtx.strokeStyle = '#38bdf8';
+        tCtx.lineWidth = 4;
+        tCtx.strokeRect(2, 2, 252, 60);
+        tCtx.fillStyle = '#38bdf8';
+        tCtx.font = 'bold 22px sans-serif';
+        tCtx.textAlign = 'center';
+        tCtx.fillText('Қабдолла Манас', 128, 40);
+
+        const tagTex = new THREE.CanvasTexture(tagCanvas);
+        const tagMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35), new THREE.MeshBasicMaterial({ map: tagTex, transparent: true }));
+        tagMesh.position.set(0, 2.5, 0);
+        student.add(tagMesh);
+
+        this.scene.add(student);
+        this.studentCharacter = {
+          root: student,
+          leftArm: leftArmGroup,
+          rightArm: rightArmGroup,
+          leftLeg: leftLegGroup,
+          rightLeg: rightLegGroup,
+          nameTag: tagMesh
+        };
+      }
+
+      /**
+       * Rich Subject 3D Models in Center of Each Classroom
+       */
+      buildSubjectShowcaseModel(room, x, y, z) {
+        const group = new THREE.Group();
+        group.position.set(x, y, z);
+
+        if (room.id === 'room-ai') {
+          // Glowing Holographic AI Core
+          const core = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(1.2, 1),
+            new THREE.MeshStandardMaterial({ color: 0x06b6d4, wireframe: true, emissive: 0x0891b2 })
+          );
+          group.add(core);
+          group.userData = { isRotating: true, speed: 0.02 };
+        } else if (room.id === 'room-robotics') {
+          // 3D Mini Rover Robot
+          const roverBody = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 1.8), new THREE.MeshStandardMaterial({ color: 0xf59e0b }));
+          group.add(roverBody);
+          const head = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.6), new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
+          head.position.set(0, 0.6, 0.4);
+          group.add(head);
+        } else if (room.id === 'room-stem') {
+          // Wind Turbine & Solar Panel Model
+          const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 2.5), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+          mast.position.y = 1.25;
+          group.add(mast);
+          const rotor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.2, 0.05), new THREE.MeshStandardMaterial({ color: 0x10b981 }));
+          rotor.position.y = 2.5;
+          group.add(rotor);
+          group.userData = { isRotor: true, rotor: rotor };
+        } else if (room.id === 'room-physics') {
+          // Pendulum Model
+          const stand = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.8, 0.2), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+          stand.position.y = 1.4;
+          group.add(stand);
+          const bob = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8 }));
+          bob.position.set(0.6, 0.8, 0);
+          group.add(bob);
+        } else if (room.id === 'room-chemistry') {
+          // 3D Water & Methane Molecule Model
+          const atomO = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+          group.add(atomO);
+          const atomH1 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+          atomH1.position.set(0.8, 0.7, 0);
+          group.add(atomH1);
+          const atomH2 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+          atomH2.position.set(-0.8, 0.7, 0);
+          group.add(atomH2);
+          group.userData = { isRotating: true, speed: 0.015 };
+        } else if (room.id === 'room-biology') {
+          // 3D DNA Helix Segment
+          const dnaGroup = new THREE.Group();
+          for (let i = 0; i < 8; i++) {
+            const h = i * 0.35;
+            const ang = i * 0.8;
+            const s1 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ color: 0x10b981 }));
+            s1.position.set(Math.cos(ang) * 0.8, h, Math.sin(ang) * 0.8);
+            dnaGroup.add(s1);
+            const s2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshStandardMaterial({ color: 0x06b6d4 }));
+            s2.position.set(-Math.cos(ang) * 0.8, h, -Math.sin(ang) * 0.8);
+            dnaGroup.add(s2);
+          }
+          group.add(dnaGroup);
+          group.userData = { isRotating: true, speed: 0.02 };
+        } else if (room.id === 'room-geography') {
+          // 3D Rotating Globe
+          const globe = new THREE.Mesh(
+            new THREE.SphereGeometry(1.1, 24, 24),
+            new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.6 })
+          );
+          group.add(globe);
+          group.userData = { isRotating: true, speed: 0.01 };
+        } else if (room.id === 'room-math') {
+          // Geometric Polyhedrons
+          const icosa = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(1.0),
+            new THREE.MeshStandardMaterial({ color: 0x38bdf8, wireframe: true })
+          );
+          group.add(icosa);
+          group.userData = { isRotating: true, speed: 0.015 };
+        } else if (room.id === 'room-music') {
+          // Grand Harp / Digital Piano
+          const harp = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.15, 8, 24, Math.PI), new THREE.MeshStandardMaterial({ color: 0xec4899 }));
+          harp.rotation.z = Math.PI / 2;
+          group.add(harp);
+        } else {
+          // Generic high-tech beacon
+          const beacon = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.9),
+            new THREE.MeshStandardMaterial({ color: room.color, metalness: 0.7 })
+          );
+          group.add(beacon);
+          group.userData = { isRotating: true, speed: 0.01 };
+        }
+
+        this.scene.add(group);
+        this.animatedShowcaseModels = this.animatedShowcaseModels || [];
+        this.animatedShowcaseModels.push(group);
+      }
+
+      buildCorridorAmenities(yBase) {
+        // Hallway smart information kiosk at central crossing
+        const kioskMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.8 });
+        const kiosk = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.0, 2.5, 8), kioskMat);
+        kiosk.position.set(0, yBase + 2.05, 0);
+        this.scene.add(kiosk);
+        this.colliders.push(new THREE.Box3().setFromObject(kiosk));
+
+        const screen = new THREE.Mesh(
+          new THREE.BoxGeometry(1.2, 1.8, 0.1),
+          new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+        );
+        screen.position.set(0, yBase + 2.6, 0.85);
+        this.scene.add(screen);
+      }
+
+      /**
+       * Central Elevator Shaft & Floating Glass Elevator Car
+       */
+      buildCentralElevatorCore() {
+        const coreGeo = new THREE.BoxGeometry(8, 36, 8);
+        const coreMat = new THREE.MeshStandardMaterial({
+          color: 0x0284c7,
+          transparent: true,
+          opacity: 0.25,
+          roughness: 0.1
+        });
+        const shaft = new THREE.Mesh(coreGeo, coreMat);
+        shaft.position.set(0, 18, 0);
+        this.scene.add(shaft);
+
+        // Glass Elevator Cabin
+        const cabinMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.5,
+          metalness: 0.9
+        });
+        this.elevatorCabin = new THREE.Mesh(new THREE.BoxGeometry(6, 4.5, 6), cabinMat);
+        this.elevatorCabin.position.set(0, 3, 0);
+        this.scene.add(this.elevatorCabin);
+      }
+
+      /**
+       * Setup Keyboard & Mouse First Person Controls
+       */
+      setupEventListeners() {
+        // Keyboard
+        window.addEventListener('keydown', (e) => {
+          this.keys[e.code] = true;
+
+          // E for interaction
+          if (e.code === 'KeyE') {
+            this.handleInteraction();
+          }
+
+          // ESC to close modal
+          if (e.code === 'Escape') {
+            this.closeAllModals();
+          }
+
+          // Arrow Keys for turning book pages
+          if (!document.getElementById('book-reader-modal').classList.contains('hidden')) {
+            if (e.code === 'ArrowLeft') this.turnBookPage(-2);
+            if (e.code === 'ArrowRight') this.turnBookPage(2);
+          }
+        });
+
+        window.addEventListener('keyup', (e) => {
+          this.keys[e.code] = false;
+        });
+
+        // Mouse Look via Pointer Lock
+        this.container.addEventListener('click', () => {
+          if (!this.isInSchool) return;
+          if (!this.isPointerLocked && document.getElementById('classroom-modal').classList.contains('hidden')) {
+            this.container.requestPointerLock();
+          }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+          this.isPointerLocked = (document.pointerLockElement === this.container);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!this.isPointerLocked) return;
+          const sensitivity = 0.0022;
+          this.player.rotation.y -= e.movementX * sensitivity;
+          this.player.rotation.x -= e.movementY * sensitivity;
+
+          // Clamp vertical pitch (-85deg to +85deg)
+          this.player.rotation.x = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, this.player.rotation.x));
+        });
+
+        // Start button on Intro Hero
+        document.getElementById('btn-enter-school').addEventListener('click', () => {
+          this.enterSchoolSequence();
+        });
+
+        // Sound Toggle
+        document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+          sound.enabled = !sound.enabled;
+          const icon = document.getElementById('sound-icon');
+          if (sound.enabled) {
+            icon.className = 'fa-solid fa-volume-high';
+            sound.playSuccess();
+          } else {
+            icon.className = 'fa-solid fa-volume-xmark';
+            sound.stopAdayKuy();
+          }
+        });
+
+        // Upload custom audio file directly from device
+        const uploadMusicBtn = document.getElementById('btn-upload-music');
+        const fileInput = document.getElementById('local-audio-file-input');
+        if (uploadMusicBtn && fileInput) {
+          uploadMusicBtn.addEventListener('click', () => {
+            fileInput.click();
+          });
+          fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+              sound.loadCustomAudioFile(e.target.files[0]);
+              sound.playSuccess();
+              uploadMusicBtn.classList.add('border-emerald-400', 'text-emerald-300');
+            }
+          });
+        }
+
+        // Toggle 1st Person / 3rd Person View of Student Avatar
+        const camViewBtn = document.getElementById('btn-toggle-cam-view');
+        if (camViewBtn) {
+          camViewBtn.addEventListener('click', () => {
+            this.isThirdPerson = !this.isThirdPerson;
+            sound.playStep();
+            document.getElementById('cam-view-label').innerText = this.isThirdPerson ? '3D Оқушы' : '1-ші адам';
+          });
+        }
+
+        // Modals triggers
+        document.getElementById('btn-open-map').addEventListener('click', () => {
+          this.openMapModal();
+        });
+        document.getElementById('btn-open-schedule').addEventListener('click', () => {
+          this.openScheduleModal();
+        });
+        document.getElementById('btn-open-library').addEventListener('click', () => {
+          this.openLibraryModal();
+        });
+        document.getElementById('btn-open-ai').addEventListener('click', () => {
+          this.openAiModal();
+        });
+        document.getElementById('btn-help-controls').addEventListener('click', () => {
+          document.getElementById('help-modal').classList.remove('hidden');
+        });
+
+        // 3D Exterior Orbit Dragging Controls
+        this.container.addEventListener('mousedown', (e) => {
+          if (this.cameraMode === 'exterior') {
+            this.isOrbitDragging = true;
+            this.orbitPrevX = e.clientX;
+          }
+        });
+
+        window.addEventListener('mouseup', () => {
+          this.isOrbitDragging = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+          if (this.cameraMode === 'exterior' && this.isOrbitDragging) {
+            const dx = e.clientX - this.orbitPrevX;
+            this.orbitPrevX = e.clientX;
+            this.exteriorAngle -= dx * 0.005;
+          }
+        });
+
+        // Touch swipe for exterior orbiting on mobile
+        let touchStartX = 0;
+        this.container.addEventListener('touchstart', (e) => {
+          if (this.cameraMode === 'exterior' && e.touches.length > 0) {
+            touchStartX = e.touches[0].clientX;
+          }
+        }, { passive: true });
+
+        this.container.addEventListener('touchmove', (e) => {
+          if (this.cameraMode === 'exterior' && e.touches.length > 0) {
+            const dx = e.touches[0].clientX - touchStartX;
+            touchStartX = e.touches[0].clientX;
+            this.exteriorAngle -= dx * 0.006;
+          }
+        }, { passive: true });
+      }
+
+      setExteriorView(viewType) {
+        sound.playInteract();
+        if (viewType === 'front') {
+          this.exteriorAngle = 0;
+          this.exteriorDistance = 105;
+          this.exteriorHeight = 26;
+        } else if (viewType === 'top') {
+          this.exteriorAngle = 0.3;
+          this.exteriorDistance = 135;
+          this.exteriorHeight = 70;
+        } else if (viewType === 'garden') {
+          this.exteriorAngle = -0.75;
+          this.exteriorDistance = 95;
+          this.exteriorHeight = 16;
+        }
+      }
+
+      setupTouchControls() {
+        const dpad = document.getElementById('touch-dpad');
+        const actionBtn = document.getElementById('touch-action-btn');
+
+        if (actionBtn) {
+          actionBtn.addEventListener('click', () => {
+            this.handleInteraction();
+          });
+        }
+
+        if (dpad) {
+          const handleTouch = (e) => {
+            const touch = e.touches[0];
+            const rect = dpad.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const dx = (touch.clientX - cx) / (rect.width / 2);
+            const dy = (touch.clientY - cy) / (rect.height / 2);
+            this.touchMove.x = Math.max(-1, Math.min(1, dx));
+            this.touchMove.y = Math.max(-1, Math.min(1, dy));
+          };
+
+          dpad.addEventListener('touchstart', handleTouch, { passive: true });
+          dpad.addEventListener('touchmove', handleTouch, { passive: true });
+          dpad.addEventListener('touchend', () => {
+            this.touchMove.x = 0;
+            this.touchMove.y = 0;
+          });
+        }
+      }
+
+      enterSchoolSequence() {
+        sound.init();
+
+        // Hide welcome intro panel
+        document.getElementById('intro-modal').classList.add('opacity-0');
+        setTimeout(() => {
+          document.getElementById('intro-modal').classList.add('hidden');
+        }, 700);
+
+        // Smooth 3D cinematic fly-in from garden to the entrance doors
+        const startPos = this.camera.position.clone();
+        const startLookAt = new THREE.Vector3(0, 10, 0);
+        const targetPos = new THREE.Vector3(0, 2.2, -14); // inside lobby
+        const targetLookAt = new THREE.Vector3(0, 2.2, 30); // looking down the hall
+
+        let t = 0;
+        const duration = 2.4; // 2.4s cinematic flight
+        const startTime = performance.now();
+
+        const flyStep = () => {
+          const now = performance.now();
+          const elapsed = (now - startTime) / 1000;
+          t = Math.min(1, elapsed / duration);
+          
+          // Ease-in-out quadratic
+          const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+          // Interpolate camera
+          this.camera.position.lerpVectors(startPos, targetPos, ease);
+
+          // As we pass z = -28, open front doors
+          if (this.camera.position.z > -32 && this.mainEntranceDoors) {
+            const doorProgress = Math.min(1, (this.camera.position.z + 32) / 12);
+            this.mainEntranceDoors.left.position.x = -1.8 - doorProgress * 2.8;
+            this.mainEntranceDoors.right.position.x = 1.8 + doorProgress * 2.8;
+          }
+
+          const currentLookAt = new THREE.Vector3().lerpVectors(startLookAt, targetLookAt, ease);
+          this.camera.lookAt(currentLookAt);
+
+          if (t < 1) {
+            requestAnimationFrame(flyStep);
+          } else {
+            // Arrived inside school
+            this.isInSchool = true;
+            this.cameraMode = 'fps';
+            this.player.position.set(0, 0.8, -14);
+            this.player.rotation.set(0, Math.PI, 0);
+            this.currentFloor = 1;
+            this.updateFloorHud();
+
+            if (window.innerWidth > 768) {
+              this.container.requestPointerLock();
+            }
+          }
+        };
+
+        requestAnimationFrame(flyStep);
+      }
+
+      teleportFloor(floorNum) {
+        sound.playElevator();
+        this.currentFloor = floorNum;
+        const yBase = (floorNum - 1) * 12;
+        this.player.position.set(0, yBase + 0.8, -8);
+        this.player.rotation.set(0, Math.PI, 0);
+        this.updateFloorHud();
+
+        // Animate elevator cabin height
+        if (this.elevatorCabin) {
+          this.elevatorCabin.position.y = yBase + 3;
+        }
+
+        // Active state on floor button
+        document.querySelectorAll('.floor-btn').forEach(btn => {
+          if (btn.dataset.floor === String(floorNum)) {
+            btn.className = 'floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-cyan-600 text-white shadow';
+          } else {
+            btn.className = 'floor-btn px-3 py-1.5 rounded-xl text-xs font-bold transition bg-slate-800 text-slate-300 hover:bg-slate-700';
+          }
+        });
+      }
+
+      teleportExterior() {
+        this.cameraMode = 'exterior';
+        this.isInSchool = false;
+        sound.stopAdayKuy();
+        const uploadMusicBtn = document.getElementById('btn-upload-music');
+        if (uploadMusicBtn) {
+          uploadMusicBtn.classList.remove('border-emerald-400', 'text-emerald-300');
+        }
+        document.exitPointerLock?.();
+        this.exteriorAngle = 0;
+        this.exteriorDistance = 110;
+        this.exteriorHeight = 28;
+
+        document.getElementById('intro-modal').classList.remove('hidden');
+        setTimeout(() => {
+          document.getElementById('intro-modal').classList.remove('opacity-0');
+        }, 10);
+      }
+
+      updateFloorHud() {
+        document.getElementById('hud-floor-indicator').innerText = this.currentFloor;
+      }
+
+      /**
+       * Check raycast against interactable objects (doors, laboratory stations)
+       */
+      updateInteractionPrompt() {
+        const promptEl = document.getElementById('interaction-prompt');
+        const promptText = document.getElementById('prompt-text');
+        const reticle = document.getElementById('crosshair');
+
+        if (!this.isInSchool || this.cameraMode !== 'fps') {
+          promptEl.classList.add('hidden');
+          reticle.classList.remove('active');
+          this.activeInteractable = null;
+          return;
+        }
+
+        // Find nearest interactable within 4.5 units
+        let nearest = null;
+        let minDist = 4.5;
+
+        for (const item of this.interactableObjects) {
+          const dist = this.player.position.distanceTo(item.position);
+          if (dist < minDist) {
+            minDist = dist;
+            nearest = item;
+          }
+        }
+
+        if (nearest) {
+          this.activeInteractable = nearest;
+          reticle.classList.add('active');
+          promptEl.classList.remove('hidden');
+
+          if (nearest.type === 'door') {
+            const isO = nearest.doorRecord.isOpen;
+            promptText.innerText = isO ? `${nearest.doorRecord.room.name} есігін жабу (E)` : `${nearest.doorRecord.room.name} есігін ашу (E)`;
+          } else if (nearest.type === 'station') {
+            promptText.innerText = `${nearest.room.name} зертханасын бастау (E)`;
+          }
+        } else {
+          this.activeInteractable = null;
+          reticle.classList.remove('active');
+          promptEl.classList.add('hidden');
+        }
+      }
+
+      handleInteraction() {
+        if (!this.activeInteractable) return;
+
+        if (this.activeInteractable.type === 'door') {
+          const dr = this.activeInteractable.doorRecord;
+          dr.isOpen = !dr.isOpen;
+          sound.playDoor();
+
+          // Hinged rotation: open inward 90 degrees
+          const openAngle = dr.isNorthWing ? Math.PI / 2 : -Math.PI / 2;
+          dr.targetAngle = dr.isOpen ? openAngle : 0;
+        } else if (this.activeInteractable.type === 'station') {
+          sound.playInteract();
+          this.openClassroomModal(this.activeInteractable.room);
+        }
+      }
+
+      /**
+       * FPS Movement Physics & Collision with walls and closed doors
+       * Synchronizes the 3D Student Character Avatar (Қабдолла Манас)
+       */
+      updatePlayerPhysics(delta) {
+        if (!this.isInSchool || this.cameraMode !== 'fps') return;
+
+        const moveVector = new THREE.Vector3();
+        let isMoving = false;
+
+        // Keyboard input
+        if (this.keys['KeyW'] || this.keys['ArrowUp']) { moveVector.z += 1; isMoving = true; }
+        if (this.keys['KeyS'] || this.keys['ArrowDown']) { moveVector.z -= 1; isMoving = true; }
+        if (this.keys['KeyA'] || this.keys['ArrowLeft']) { moveVector.x -= 1; isMoving = true; }
+        if (this.keys['KeyD'] || this.keys['ArrowRight']) { moveVector.x += 1; isMoving = true; }
+
+        // Mobile touch input
+        if (this.touchMove.y !== 0) { moveVector.z -= this.touchMove.y; isMoving = true; }
+        if (this.touchMove.x !== 0) { moveVector.x += this.touchMove.x; isMoving = true; }
+
+        if (moveVector.lengthSq() > 0) {
+          moveVector.normalize();
+
+          // Camera yaw rotation
+          const yaw = this.player.rotation.y;
+          const rotatedX = moveVector.x * Math.cos(yaw) - moveVector.z * Math.sin(yaw);
+          const rotatedZ = moveVector.x * Math.sin(yaw) + moveVector.z * Math.cos(yaw);
+
+          const stepSpeed = this.player.speed * delta;
+          const newPos = this.player.position.clone();
+          newPos.x += rotatedX * stepSpeed;
+          newPos.z += rotatedZ * stepSpeed;
+
+          // Collision Check against static walls and closed doors
+          if (!this.checkCollision(newPos)) {
+            this.player.position.x = newPos.x;
+            this.player.position.z = newPos.z;
+          }
+
+          // Walk cycle animation for the student model
+          this.player.walkCycle += delta * 12;
+        } else {
+          this.player.walkCycle = 0;
+        }
+
+        // Animate Student Character (Қабдолла Манас)
+        if (this.studentCharacter) {
+          const sc = this.studentCharacter;
+          sc.root.position.copy(this.player.position);
+          sc.root.rotation.y = this.player.rotation.y + Math.PI; // face forward
+
+          // Make name tag billboard towards camera
+          sc.nameTag.rotation.y = -this.player.rotation.y - Math.PI;
+
+          if (isMoving) {
+            const swing = Math.sin(this.player.walkCycle) * 0.55;
+            sc.leftLeg.rotation.x = swing;
+            sc.rightLeg.rotation.x = -swing;
+            sc.leftArm.rotation.x = -swing * 0.8;
+            sc.rightArm.rotation.x = swing * 0.8;
+          } else {
+            sc.leftLeg.rotation.x = 0;
+            sc.rightLeg.rotation.x = 0;
+            sc.leftArm.rotation.x = 0;
+            sc.rightArm.rotation.x = 0;
+          }
+        }
+
+        // Update Camera Mode (1st-person or 3rd-person over shoulder)
+        if (this.isThirdPerson) {
+          if (this.studentCharacter) this.studentCharacter.root.visible = true;
+          // Position camera behind student
+          const distBehind = 3.6;
+          const camHeight = 2.4;
+          const yaw = this.player.rotation.y;
+
+          this.camera.position.x = this.player.position.x + Math.sin(yaw) * distBehind;
+          this.camera.position.y = this.player.position.y + camHeight;
+          this.camera.position.z = this.player.position.z + Math.cos(yaw) * distBehind;
+
+          this.camera.rotation.copy(this.player.rotation);
+        } else {
+          // 1st person
+          if (this.studentCharacter) this.studentCharacter.root.visible = false;
+          this.camera.position.set(this.player.position.x, this.player.position.y + 1.8, this.player.position.z);
+          this.camera.rotation.copy(this.player.rotation);
+        }
+
+        // Update animated hinged doors
+        this.doors.forEach(dr => {
+          if (Math.abs(dr.currentAngle - dr.targetAngle) > 0.01) {
+            dr.currentAngle += (dr.targetAngle - dr.currentAngle) * (delta * 8);
+            dr.pivot.rotation.y = dr.currentAngle;
+          }
+        });
+      }
+
+      checkCollision(targetPos) {
+        // Player Bounding Sphere
+        const playerSphere = new THREE.Sphere(targetPos, this.player.radius);
+
+        // Check against static wall boxes
+        for (const box of this.colliders) {
+          if (box.intersectsSphere(playerSphere)) {
+            return true;
+          }
+        }
+
+        // Check against closed doors (blocking entry if door is shut)
+        for (const dr of this.doors) {
+          if (!dr.isOpen) {
+            if (dr.collider.intersectsSphere(playerSphere)) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      /**
+       * MODAL SYSTEMS: CLASSROOM TASKS, SIMULATIONS & QUIZZES
+       */
+      setupModals() {
+        document.getElementById('btn-close-modal').addEventListener('click', () => {
+          this.closeAllModals();
+        });
+        document.getElementById('btn-exit-to-school').addEventListener('click', () => {
+          this.closeAllModals();
+        });
+
+        // Realistic Book Reader Buttons
+        document.getElementById('book-close-btn').addEventListener('click', () => {
+          document.getElementById('book-reader-modal').classList.add('hidden');
+          sound.playInteract();
+        });
+        document.getElementById('book-prev-btn').addEventListener('click', () => {
+          this.turnBookPage(-2);
+        });
+        document.getElementById('book-next-btn').addEventListener('click', () => {
+          this.turnBookPage(2);
+        });
+
+        // Tab switcher inside classroom modal
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const targetTab = btn.dataset.tab;
+            this.switchModalTab(targetTab);
+          });
+        });
+
+        // Library Category filter
+        const libCatBtns = document.querySelectorAll('.lib-cat-btn');
+        libCatBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            libCatBtns.forEach(b => {
+              b.className = 'lib-cat-btn px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 font-bold whitespace-nowrap';
+            });
+            btn.className = 'lib-cat-btn px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-bold whitespace-nowrap';
+            this.renderLibraryBooks(btn.dataset.cat);
+          });
+        });
+
+        // AI Chat input send
+        const aiSendBtn = document.getElementById('ai-send-btn');
+        const aiInput = document.getElementById('ai-input-field');
+        const triggerAiSend = () => {
+          const val = aiInput.value.trim();
+          if (val) {
+            this.handleAiQuestion(val);
+            aiInput.value = '';
+          }
+        };
+        aiSendBtn.addEventListener('click', triggerAiSend);
+        aiInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') triggerAiSend();
+        });
+      }
+
+      closeAllModals() {
+        document.getElementById('classroom-modal').classList.add('hidden');
+        document.getElementById('map-modal').classList.add('hidden');
+        document.getElementById('schedule-modal').classList.add('hidden');
+        document.getElementById('library-modal').classList.add('hidden');
+        document.getElementById('book-reader-modal').classList.add('hidden');
+        document.getElementById('ai-modal').classList.add('hidden');
+        document.getElementById('help-modal').classList.add('hidden');
+
+        // Restore pointer lock if in school
+        if (this.isInSchool && window.innerWidth > 768) {
+          setTimeout(() => this.container.requestPointerLock(), 100);
+        }
+      }
+
+      openClassroomModal(room) {
+        document.exitPointerLock?.();
+        this.currentOpenedRoom = room;
+
+        const modal = document.getElementById('classroom-modal');
+        document.getElementById('modal-title').innerText = room.name;
+        document.getElementById('modal-subtitle').innerText = `№${room.code} Кабинет — ${room.floor}-Қабат`;
+
+        const iconContainer = document.getElementById('modal-icon-container');
+        iconContainer.innerHTML = `<i class="fa-solid ${room.icon}"></i>`;
+        iconContainer.style.color = room.color;
+
+        // Render Room Content
+        this.switchModalTab('tab-info');
+        modal.classList.remove('hidden');
+      }
+
+      switchModalTab(tabId) {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        tabBtns.forEach(btn => {
+          if (btn.dataset.tab === tabId) {
+            btn.className = 'tab-btn px-4 py-2 text-xs font-bold rounded-t-xl transition text-cyan-400 border-b-2 border-cyan-400 bg-slate-800/60';
+          } else {
+            btn.className = 'tab-btn px-4 py-2 text-xs font-bold rounded-t-xl transition text-slate-400 hover:text-slate-200';
+          }
+        });
+
+        const body = document.getElementById('modal-body');
+        const room = this.currentOpenedRoom;
+        if (!room) return;
+
+        if (tabId === 'tab-info') {
+          body.innerHTML = this.renderRoomInfoHtml(room);
+        } else if (tabId === 'tab-experiment') {
+          body.innerHTML = this.renderRoomExperimentHtml(room);
+          this.attachExperimentHandlers(room);
+        } else if (tabId === 'tab-quiz') {
+          body.innerHTML = this.renderRoomQuizHtml(room);
+          this.attachQuizHandlers(room);
+        }
+      }
+
+      renderRoomInfoHtml(room) {
+        return `
+          <div class="space-y-6">
+            <div class="glass-card p-5 rounded-2xl border border-cyan-500/20">
+              <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-compass-drafting text-cyan-400"></i> Пәннің мақсаты мен цифрлық жабдықталуы
+              </h3>
+              <p class="text-sm text-slate-300 leading-relaxed mb-4">${room.desc}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                  <span class="text-cyan-400 font-bold block mb-1">№1 Интерактив</span>
+                  <span class="text-slate-300">Пәндік интерактивті тақта & теориялық анықтамалар</span>
+                </div>
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                  <span class="text-amber-400 font-bold block mb-1">№2 Зертхана</span>
+                  <span class="text-slate-300">Виртуалды тәжірибе, симуляция және модельдеу</span>
+                </div>
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                  <span class="text-emerald-400 font-bold block mb-1">№3 Бағалау</span>
+                  <span class="text-slate-300">Инженерлік тапсырма, алгоритм және викторина</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass-card p-5 rounded-2xl border border-slate-800">
+              <h4 class="text-sm font-bold text-white mb-3">Қауіпсіздік және цифрлық этика ережесі:</h4>
+              <ul class="text-xs text-slate-300 space-y-2 list-disc list-inside">
+                <li>Зертханалық құралдарды виртуалды сынақ тәртібі бойынша іске қосыңыз.</li>
+                <li>Әрбір эксперимент нәтижесін бақылау тақтасынан тексеріп отырыңыз.</li>
+                <li>Қате нәтиже шыққанда «Қайта орындау» батырмасын басып түзетіңіз.</li>
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+
+      renderRoomExperimentHtml(room) {
+        if (room.id === 'room-ai') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-cyan-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-microchip text-cyan-400"></i> ЖИ Мәтін және Идея Генераторы
+                </h3>
+                <p class="text-xs text-slate-300 mb-3">Сұраныс (prompt) енгізіп, нейрожелінің генерациялау нәтижесін көріңіз:</p>
+                <div class="flex gap-2 mb-3">
+                  <input id="ai-demo-input" type="text" value="Болашақтың мектебі қандай болады?" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-400">
+                  <button id="ai-demo-run-btn" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold transition">Генерациялау</button>
+                </div>
+                <div id="ai-demo-output" class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs text-cyan-200 leading-relaxed font-mono">
+                  [ЖИ Күтуде]: Тақырыпты таңдап «Генерациялау» батырмасын басыңыз...
+                </div>
+              </div>
+
+              <div class="glass-card p-4 rounded-2xl border border-slate-800">
+                <h4 class="font-bold text-white text-xs mb-2">ЖИ қалай жұмыс істейді?</h4>
+                <div class="grid grid-cols-3 gap-2 text-[11px] text-center">
+                  <div class="p-2 bg-slate-800 rounded-lg">1. Деректер базасы</div>
+                  <div class="p-2 bg-slate-800 rounded-lg">2. Нейрондық өңдеу</div>
+                  <div class="p-2 bg-slate-800 rounded-lg">3. Логикалық нәтиже</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (room.id === 'room-robotics') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-blue-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-gamepad text-blue-400"></i> Роботты Алгоритм Арқылы Басқару Трассасы
+                </h3>
+                <p class="text-xs text-slate-300 mb-3">Төмендегі командаларды басып, роботтың жүру маршрутын құрастырыңыз:</p>
+                
+                <div class="flex flex-wrap gap-2 mb-3">
+                  <button class="robot-cmd-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-cyan-300" data-cmd="АЛҒА">↑ Алға</button>
+                  <button class="robot-cmd-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-cyan-300" data-cmd="СОЛҒА">← Солға бұрылу</button>
+                  <button class="robot-cmd-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-cyan-300" data-cmd="ОҢҒА">→ Оңға бұрылу</button>
+                  <button class="robot-cmd-btn px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-cyan-300" data-cmd="ДАТЧИК">📡 Датчикпен тексеру</button>
+                  <button id="robot-clear-btn" class="px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-xs font-bold text-rose-200">Тазарту</button>
+                </div>
+
+                <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 mb-3">
+                  <span class="text-xs text-slate-400 block mb-1 font-mono">Құрастырылған алгоритм стекі:</span>
+                  <div id="robot-queue" class="text-xs text-cyan-300 font-mono min-h-[24px]">БОС (Командаларды қосыңыз)</div>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="robot-run-btn" class="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">Іске Қосу (Алгоритмді орындау)</button>
+                  <button id="robot-reset-btn" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs">Қайта бастау</button>
+                </div>
+
+                <div id="robot-status-box" class="mt-3 p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 font-mono">
+                  Күйі: Робот бастапқы позицияда күтуде.
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (room.id === 'room-stem') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-emerald-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-bridge text-emerald-400"></i> Көпір Беріктігін Сынау & Жасыл Энергия
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  <div class="p-3 bg-slate-800/80 rounded-xl">
+                    <label class="text-xs font-bold text-white block mb-1">Көпір құрылымының түрі:</label>
+                    <select id="stem-bridge-type" class="w-full bg-slate-900 border border-slate-700 text-xs rounded-lg p-2 text-white outline-none">
+                      <option value="arch">Аркалы көпір (Arch Bridge)</option>
+                      <option value="truss">Фермалы көпір (Truss Bridge)</option>
+                      <option value="suspension">Аспалы көпір (Suspension Bridge)</option>
+                    </select>
+                  </div>
+                  <div class="p-3 bg-slate-800/80 rounded-xl">
+                    <label class="text-xs font-bold text-white block mb-1">Сыналатын жүктеме (Тонна):</label>
+                    <input id="stem-load-input" type="range" min="10" max="100" value="40" class="w-full accent-emerald-500">
+                    <div class="flex justify-between text-[11px] text-slate-400 mt-1">
+                      <span>10т</span>
+                      <span id="stem-load-val" class="text-emerald-400 font-bold">40т</span>
+                      <span>100т</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button id="stem-test-btn" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">Инженерлік Сынақты Бастау</button>
+
+                <div id="stem-result-box" class="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200">
+                  Нәтиже: Жүктемені таңдап сынақ жүргізіңіз.
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (room.id === 'room-physics') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-amber-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-bolt text-amber-400"></i> Электр Тізбегі мен Ом Заңы Симуляторы
+                </h3>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label class="text-xs text-slate-300 block mb-1">Кернеу U (Вольт): <span id="phys-u-val" class="text-amber-400 font-bold">12V</span></label>
+                    <input id="phys-u-slider" type="range" min="1" max="48" value="12" class="w-full accent-amber-500">
+                  </div>
+                  <div>
+                    <label class="text-xs text-slate-300 block mb-1">Кедергі R (Ом): <span id="phys-r-val" class="text-cyan-400 font-bold">4Ω</span></label>
+                    <input id="phys-r-slider" type="range" min="1" max="20" value="4" class="w-full accent-cyan-500">
+                  </div>
+                </div>
+
+                <div class="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                  <div>
+                    <span class="text-slate-400 block">Ток күші (I = U / R):</span>
+                    <span id="phys-i-result" class="text-base font-bold text-emerald-400">3.00 Ампер</span>
+                  </div>
+                  <div id="phys-bulb" class="w-12 h-12 rounded-full border border-amber-400 bg-amber-400/40 flex items-center justify-center text-amber-200 text-xl shadow-lg shadow-amber-400/40">
+                    <i class="fa-solid fa-lightbulb"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (room.id === 'room-chemistry') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-pink-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-vial text-pink-400"></i> Қауіпсіз Виртуалды Химиялық Реакция
+                </h3>
+                <p class="text-xs text-slate-300 mb-3">Екі реагентті араластырып, реакция типін бақылаңыз:</p>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <select id="chem-reagent-1" class="bg-slate-900 border border-slate-700 text-xs rounded-lg p-2 text-white">
+                    <option value="HCl">Тұз қышқылы (HCl)</option>
+                    <option value="CuSO4">Мыс сульфаты (CuSO4)</option>
+                    <option value="CH3COOH">Сірке қышқылы</option>
+                  </select>
+                  <select id="chem-reagent-2" class="bg-slate-900 border border-slate-700 text-xs rounded-lg p-2 text-white">
+                    <option value="NaOH">Натрий гидроксиді (NaOH)</option>
+                    <option value="Fe">Темір ұнтағы (Fe)</option>
+                    <option value="NaHCO3">Ас содасы (NaHCO3)</option>
+                  </select>
+                </div>
+                <button id="chem-mix-btn" class="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs transition">Реакцияны бастау</button>
+                <div id="chem-output" class="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-pink-200">
+                  Сынауық таза. Реагенттерді қосыңыз.
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (room.id === 'room-cs') {
+          return `
+            <div class="space-y-4">
+              <div class="glass-card p-4 rounded-2xl border border-sky-500/30">
+                <h3 class="font-bold text-white text-sm mb-2 flex items-center gap-2">
+                  <i class="fa-solid fa-arrow-down-short-wide text-sky-400"></i> Сұрыптау Алгоритмін Визуализациялау (Bubble Sort)
+                </h3>
+                <div id="cs-bars-container" class="h-28 bg-slate-950 rounded-xl p-3 flex items-end justify-center gap-2 border border-slate-800 mb-3">
+                  <!-- Bars generated via JS -->
+                </div>
+                <div class="flex gap-2">
+                  <button id="cs-sort-btn" class="flex-1 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">Қадаммен Сұрыптау</button>
+                  <button id="cs-shuffle-btn" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs">Араластыру</button>
+                </div>
+                <div id="cs-status" class="mt-2 text-xs text-slate-400 font-mono">
+                  Алгоритм: O(n²) Bubble Sort визуализациясы
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // Generic fallback for other classrooms
+        return `
+          <div class="glass-card p-5 rounded-2xl border border-cyan-500/30 text-center py-8">
+            <i class="fa-solid ${room.icon} text-4xl mb-3" style="color: ${room.color}"></i>
+            <h3 class="text-base font-bold text-white mb-2">${room.name} — Интерактивті Тәжірибесі</h3>
+            <p class="text-xs text-slate-300 max-w-md mx-auto mb-4">
+              Бұл кабинеттегі жабдықтар цифрлық түрде бапталған. Төмендегі сынақ тапсырмасын бастаңыз.
+            </p>
+            <button onclick="sound.playSuccess()" class="px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition">
+              Симуляцияны Іске Қосу
+            </button>
+          </div>
+        `;
+      }
+
+      renderRoomQuizHtml(room) {
+        return `
+          <div class="space-y-4">
+            <div class="glass-card p-4 rounded-2xl border border-cyan-500/20">
+              <span class="text-xs text-cyan-400 font-bold uppercase">Пәндік Викторина & Білім Тексеру</span>
+              <h3 id="quiz-question-text" class="text-sm font-bold text-white mt-1 mb-4">
+                Сұрақ жүктелуде...
+              </h3>
+              <div id="quiz-options-grid" class="space-y-2">
+                <!-- Generated by JS -->
+              </div>
+            </div>
+            <div id="quiz-feedback-box" class="hidden p-3.5 rounded-xl text-xs font-semibold"></div>
+          </div>
+        `;
+      }
+
+      attachExperimentHandlers(room) {
+        if (room.id === 'room-ai') {
+          const runBtn = document.getElementById('ai-demo-run-btn');
+          const input = document.getElementById('ai-demo-input');
+          const output = document.getElementById('ai-demo-output');
+          runBtn.addEventListener('click', () => {
+            sound.playInteract();
+            output.innerHTML = '<span class="text-amber-400 animate-pulse">ЖИ модель жауапты генерациялап жатыр...</span>';
+            setTimeout(() => {
+              sound.playSuccess();
+              output.innerHTML = `<strong>ЖИ Жауабы:</strong> «${input.value}» тақырыбы бойынша:<br>Болашақтың мектебі — жекелендірілген оқу траекториялары, 3D STEM зертханалары, энергия үнемдеуші жасыл технологиялар және оқушының талантын ерте бастан ашатын жасанды интеллект көмекшілерімен қамтылған білім ордасы.`;
+            }, 800);
+          });
+        }
+
+        if (room.id === 'room-robotics') {
+          const queueEl = document.getElementById('robot-queue');
+          const statusBox = document.getElementById('robot-status-box');
+          let queue = [];
+
+          document.querySelectorAll('.robot-cmd-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              sound.playStep();
+              queue.push(btn.dataset.cmd);
+              queueEl.innerText = queue.join(' ➔ ');
+            });
+          });
+
+          document.getElementById('robot-clear-btn').addEventListener('click', () => {
+            queue = [];
+            queueEl.innerText = 'БОС (Командаларды қосыңыз)';
+            statusBox.innerText = 'Күйі: Робот бастапқы позицияда күтуде.';
+          });
+
+          document.getElementById('robot-run-btn').addEventListener('click', () => {
+            if (queue.length === 0) {
+              sound.playError();
+              statusBox.innerHTML = '<span class="text-rose-400">Қате: Алдымен кемінде 1 команда қосыңыз!</span>';
+              return;
+            }
+            sound.playInteract();
+            statusBox.innerHTML = '<span class="text-amber-400">Робот командаларды орындауда...</span>';
+            setTimeout(() => {
+              sound.playSuccess();
+              statusBox.innerHTML = `<span class="text-emerald-400 font-bold">Тамаша! Робот барлық ${queue.length} команданы сәтті орындап, мәреге жетті!</span>`;
+            }, 1200);
+          });
+
+          document.getElementById('robot-reset-btn').addEventListener('click', () => {
+            queue = [];
+            queueEl.innerText = 'БОС';
+            statusBox.innerText = 'Күйі: Робот трассаның басына қайтарылды.';
+          });
+        }
+
+        if (room.id === 'room-stem') {
+          const loadSlider = document.getElementById('stem-load-input');
+          const loadVal = document.getElementById('stem-load-val');
+          loadSlider.addEventListener('input', () => {
+            loadVal.innerText = `${loadSlider.value}т`;
+          });
+
+          document.getElementById('stem-test-btn').addEventListener('click', () => {
+            const bridge = document.getElementById('stem-bridge-type').value;
+            const load = parseInt(loadSlider.value);
+            const box = document.getElementById('stem-result-box');
+            sound.playInteract();
+
+            if (bridge === 'arch' && load > 70) {
+              sound.playError();
+              box.innerHTML = `<span class="text-rose-400 font-bold">Сынақ сәтсіз:</span> ${load}т жүктемеде аркалы көпірдің шеткі тіректеріне күш түсіп деформацияланды. Басқа конструкция таңдаңыз!`;
+            } else {
+              sound.playSuccess();
+              box.innerHTML = `<span class="text-emerald-400 font-bold">Сынақ сәтті өтті!</span> ${load}т салмақ конструкция арасында біркелкі таралып, беріктік талабы толық сақталды.`;
+            }
+          });
+        }
+
+        if (room.id === 'room-physics') {
+          const uSlider = document.getElementById('phys-u-slider');
+          const rSlider = document.getElementById('phys-r-slider');
+          const uVal = document.getElementById('phys-u-val');
+          const rVal = document.getElementById('phys-r-val');
+          const iRes = document.getElementById('phys-i-result');
+          const bulb = document.getElementById('phys-bulb');
+
+          const updateCircuit = () => {
+            const u = parseFloat(uSlider.value);
+            const r = parseFloat(rSlider.value);
+            const i = u / r;
+            uVal.innerText = `${u}V`;
+            rVal.innerText = `${r}Ω`;
+            iRes.innerText = `${i.toFixed(2)} Ампер`;
+
+            const brightness = Math.min(1, i / 8);
+            bulb.style.opacity = Math.max(0.2, brightness);
+            sound.playTone(200 + i * 80, 'sine', 0.05, 0.04);
+          };
+
+          uSlider.addEventListener('input', updateCircuit);
+          rSlider.addEventListener('input', updateCircuit);
+        }
+
+        if (room.id === 'room-chemistry') {
+          document.getElementById('chem-mix-btn').addEventListener('click', () => {
+            const r1 = document.getElementById('chem-reagent-1').value;
+            const r2 = document.getElementById('chem-reagent-2').value;
+            const out = document.getElementById('chem-output');
+
+            sound.playTone(340, 'triangle', 0.3, 0.1);
+            if (r1 === 'HCl' && r2 === 'NaOH') {
+              sound.playSuccess();
+              out.innerHTML = `<span class="text-emerald-400 font-bold">Бейтараптану реакциясы:</span><br>HCl + NaOH ➔ NaCl + H2O (Тұз бен су түзілді, жылу бөлінді).`;
+            } else if (r1 === 'CuSO4' && r2 === 'Fe') {
+              sound.playSuccess();
+              out.innerHTML = `<span class="text-amber-400 font-bold">Орын басу реакциясы:</span><br>CuSO4 + Fe ➔ FeSO4 + Cu↓ (Ерітіндінің түсі өзгеріп, мыс бөлінді).`;
+            } else {
+              sound.playInteract();
+              out.innerHTML = `<span class="text-cyan-300 font-bold">Тәжірибе тіркелді:</span> ${r1} және ${r2} молекулалары қауіпсіз әрекеттесті.`;
+            }
+          });
+        }
+
+        if (room.id === 'room-cs') {
+          let numbers = [45, 12, 89, 34, 71, 23];
+          const container = document.getElementById('cs-bars-container');
+          const renderBars = () => {
+            container.innerHTML = '';
+            numbers.forEach(n => {
+              const bar = document.createElement('div');
+              bar.className = 'w-9 bg-sky-500 rounded-t-lg flex items-center justify-center text-[10px] text-slate-900 font-bold';
+              bar.style.height = `${n * 1.1}%`;
+              bar.innerText = n;
+              container.appendChild(bar);
+            });
+          };
+          renderBars();
+
+          document.getElementById('cs-shuffle-btn').addEventListener('click', () => {
+            numbers.sort(() => Math.random() - 0.5);
+            renderBars();
+            sound.playStep();
+          });
+
+          document.getElementById('cs-sort-btn').addEventListener('click', () => {
+            numbers.sort((a, b) => a - b);
+            renderBars();
+            sound.playSuccess();
+          });
+        }
+      }
+
+      attachQuizHandlers(room) {
+        const questionText = document.getElementById('quiz-question-text');
+        const optionsGrid = document.getElementById('quiz-options-grid');
+        const feedback = document.getElementById('quiz-feedback-box');
+
+        // Sample quiz bank per discipline
+        const quizzes = {
+          'room-ai': {
+            q: 'Нейрожеліні оқытуда «Dataset» (деректер жиыны) қандай рөл атқарады?',
+            options: [
+              { t: 'Модельді үйретуге қажетті мысалдар мен білім қоры', correct: true },
+              { t: 'Тек компьютердің салқындатқышын басқарушы', correct: false },
+              { t: 'Мәтінді өшіруге арналған антивирус', correct: false }
+            ],
+            hint: 'ЖИ дұрыс жұмыс істеуі үшін мыңдаған сапалы мысалдарды талдап үйренуі тиіс.'
+          },
+          'room-robotics': {
+            q: 'Роботтың алдындағы кедергіні анықтайтын негізгі сенсор қандай?',
+            options: [
+              { t: 'Ультрадыбыстық немесе инфрақызыл қашықтық датчигі', correct: true },
+              { t: 'Температура өлшегіш термометр', correct: false },
+              { t: 'Барометрлік ауа қысымы датчигі', correct: false }
+            ],
+            hint: 'Ультрадыбыстық сенсор сигнал жіберіп, оның қайту уақыты бойынша арақашықтықты есептейді.'
+          },
+          'room-physics': {
+            q: 'Ом заңы бойынша ток күшінің (I) формуласы қандай?',
+            options: [
+              { t: 'I = U / R', correct: true },
+              { t: 'I = U * R', correct: false },
+              { t: 'I = R / U', correct: false }
+            ],
+            hint: 'Ток күші кернеуге тура пропорционал, ал кедергіге кері пропорционал.'
+          }
+        };
+
+        const quiz = quizzes[room.id] || {
+          q: `${room.name} бойынша негізгі ғылыми қағида дұрыс па?`,
+          options: [
+            { t: 'Иә, бұл қазіргі ғылым мен білім беру стандартына сәйкес', correct: true },
+            { t: 'Жоқ, бұл ескірген көзқарас', correct: false }
+          ],
+          hint: 'Заманауи STEM білімі тәжірибе мен логикалық дәлелге сүйенеді.'
+        };
+
+        questionText.innerText = quiz.q;
+        optionsGrid.innerHTML = '';
+        feedback.className = 'hidden';
+
+        quiz.options.forEach(opt => {
+          const btn = document.createElement('button');
+          btn.className = 'w-full text-left p-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs text-white border border-slate-700 transition flex items-center justify-between';
+          btn.innerHTML = `<span>${opt.t}</span> <i class="fa-regular fa-circle text-slate-400"></i>`;
+          btn.addEventListener('click', () => {
+            if (opt.correct) {
+              sound.playSuccess();
+              btn.className = 'w-full text-left p-3 rounded-xl bg-emerald-950/80 text-xs text-emerald-200 border border-emerald-500 transition flex items-center justify-between';
+              btn.innerHTML = `<span>${opt.t}</span> <i class="fa-solid fa-circle-check text-emerald-400"></i>`;
+              feedback.className = 'p-3.5 rounded-xl bg-emerald-900/40 border border-emerald-500 text-xs text-emerald-200 block';
+              feedback.innerHTML = `<strong>Дұрыс!</strong> ${quiz.hint}`;
+            } else {
+              sound.playError();
+              btn.className = 'w-full text-left p-3 rounded-xl bg-rose-950/80 text-xs text-rose-200 border border-rose-500 transition flex items-center justify-between';
+              btn.innerHTML = `<span>${opt.t}</span> <i class="fa-solid fa-circle-xmark text-rose-400"></i>`;
+              feedback.className = 'p-3.5 rounded-xl bg-rose-900/40 border border-rose-500 text-xs text-rose-200 block';
+              feedback.innerHTML = `<strong>Қате!</strong> Ишара: ${quiz.hint}`;
+            }
+          });
+          optionsGrid.appendChild(btn);
+        });
+      }
+
+      /**
+       * 3D SCHOOL MAP MODAL IMPLEMENTATION
+       */
+      openMapModal() {
+        document.exitPointerLock?.();
+        document.getElementById('map-modal').classList.remove('hidden');
+        this.switchMapFloor(this.currentFloor);
+      }
+
+      switchMapFloor(floorNum) {
+        [1, 2, 3].forEach(f => {
+          const tab = document.getElementById(`map-tab-${f}`);
+          if (f === floorNum) {
+            tab.className = 'map-floor-tab px-4 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 text-white';
+          } else {
+            tab.className = 'map-floor-tab px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300';
+          }
+        });
+
+        const grid = document.getElementById('map-rooms-grid');
+        grid.innerHTML = '';
+
+        const rooms = SCHOOL_DATA[`floor${floorNum}`] || [];
+        rooms.forEach(r => {
+          const card = document.createElement('div');
+          card.className = 'glass-card p-3 rounded-xl border border-slate-700 hover:border-cyan-400 cursor-pointer transition flex items-center justify-between';
+          card.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white" style="background: ${r.color}33; color: ${r.color}">
+                <i class="fa-solid ${r.icon}"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-white">${r.name}</h4>
+                <span class="text-[10px] text-slate-400">№${r.code} Кабинет (${floorNum}-қабат)</span>
+              </div>
+            </div>
+            <button class="px-3 py-1 rounded-lg bg-cyan-600/30 hover:bg-cyan-600 text-cyan-300 hover:text-white text-xs font-semibold">Бару</button>
+          `;
+          card.addEventListener('click', () => {
+            this.navigateDirectToRoom(r);
+          });
+          grid.appendChild(card);
+        });
+      }
+
+      navigateDirectToRoom(room) {
+        sound.playElevator();
+        document.getElementById('map-modal').classList.add('hidden');
+        this.currentFloor = room.floor;
+        this.updateFloorHud();
+
+        // Place player right in front of classroom door in hallway
+        const frontZ = room.doorPos.z > 0 ? room.doorPos.z - 5 : room.doorPos.z + 5;
+        this.player.position.set(room.doorPos.x, (room.floor - 1) * 12 + 0.8, frontZ);
+        this.player.rotation.set(0, room.doorPos.z > 0 ? 0 : Math.PI, 0);
+
+        if (window.innerWidth > 768) {
+          setTimeout(() => this.container.requestPointerLock(), 200);
+        }
+      }
+
+      /**
+       * SMART TIMETABLE MODAL IMPLEMENTATION
+       * Uses the exact 5«А» (206) Schedule provided in the user's photo with afternoon STEM/Robotics clubs
+       */
+      openScheduleModal() {
+        document.exitPointerLock?.();
+        document.getElementById('schedule-modal').classList.remove('hidden');
+        this.renderScheduleTable();
+
+        document.getElementById('schedule-day-select').onchange = () => this.renderScheduleTable();
+      }
+
+      renderScheduleTable() {
+        const container = document.getElementById('schedule-table-container');
+        container.innerHTML = '';
+        const day = document.getElementById('schedule-day-select').value;
+
+        // Exact Schedule from User's 5«A» (206) Document
+        const scheduleData = {
+          mon: {
+            title: 'Дүйсенбі — 5 «А» (206 каб)',
+            morning: [
+              { num: 1, time: '8:00 - 8:45', sub: 'Сынып сағаты', room: '206', floor: 2 },
+              { num: 2, time: '8:50 - 9:35', sub: 'Орыс тілі мен әдебиеті', room: '207', floor: 2 },
+              { num: 3, time: '9:45 - 10:30', sub: 'Информатика (инф55/инф56)', room: '202', floor: 2 },
+              { num: 4, time: '10:40 - 11:25', sub: 'Математика', room: '201', floor: 2 },
+              { num: 5, time: '11:30 - 12:15', sub: 'Қазақ тілі', room: '204', floor: 2 },
+              { num: 6, time: '12:20 - 13:05', sub: 'Қазақстан тарихы', room: '205', floor: 2 },
+              { num: 7, time: '13:10 - 13:55', sub: 'Өзін-өзі тану / Консультация', room: '206', floor: 2 }
+            ],
+            clubs: [
+              { time: '14:30 - 15:30', name: 'Робототехника және Arduino бағдарламалау', room: '102', floor: 1, mentor: 'Қабдолла М. жетекшілігімен' },
+              { time: '15:45 - 16:45', name: 'Жасанды Интеллектке кіріспе', room: '101', floor: 1, mentor: 'IT-Зертхана' }
+            ]
+          },
+          tue: {
+            title: 'Сейсенбі — 5 «А» (206 каб)',
+            morning: [
+              { num: 1, time: '8:00 - 8:45', sub: 'Математика', room: '201', floor: 2 },
+              { num: 2, time: '8:50 - 9:35', sub: 'Дүниежүзі тарихы', room: '205', floor: 2 },
+              { num: 3, time: '9:45 - 10:30', sub: 'Жаратылыстану', room: '106', floor: 1 },
+              { num: 4, time: '10:40 - 11:25', sub: 'Қазақ әдебиеті', room: '204', floor: 2 },
+              { num: 5, time: '11:30 - 12:15', sub: 'Ағылшын тілі (ағыл16/20)', room: '203', floor: 2 },
+              { num: 6, time: '12:20 - 13:05', sub: 'Дене шынықтыру', room: '305', floor: 3 },
+              { num: 7, time: '13:10 - 13:55', sub: 'Матлицей сабағы', room: '201', floor: 2 }
+            ],
+            clubs: [
+              { time: '14:30 - 15:30', name: 'STEM Инженерия және 3D Модельдеу', room: '103', floor: 1, mentor: 'Инженерлік топ' },
+              { time: '15:45 - 16:45', name: 'Шахмат және логикалық есептер', room: '201', floor: 2, mentor: 'Спорт орталығы' }
+            ]
+          },
+          wed: {
+            title: 'Сәрсенбі — 5 «А» (206 каб)',
+            morning: [
+              { num: 1, time: '8:00 - 8:45', sub: 'Математика', room: '201', floor: 2 },
+              { num: 2, time: '8:50 - 9:35', sub: 'Орыс тілі мен әдебиеті', room: '207', floor: 2 },
+              { num: 3, time: '9:45 - 10:30', sub: 'Көркем еңбек (көрк.еңб.58/59)', room: '302', floor: 3 },
+              { num: 4, time: '10:40 - 11:25', sub: 'Дене шынықтыру', room: '305', floor: 3 },
+              { num: 5, time: '11:30 - 12:15', sub: 'Қазақ тілі', room: '204', floor: 2 },
+              { num: 6, time: '12:20 - 13:05', sub: 'Ағылшын тілі', room: '203', floor: 2 },
+              { num: 7, time: '13:10 - 13:55', sub: 'Жеке қауіпсіздік ережелері', room: '304', floor: 3 }
+            ],
+            clubs: [
+              { time: '14:30 - 15:30', name: 'Роботтар жарысы трассасы (RoboRace)', room: '102', floor: 1, mentor: 'Робототехника клубы' },
+              { time: '15:45 - 16:45', name: 'Экология және Жасыл Мектеп жобасы', room: '108', floor: 1, mentor: 'Эко-орталық' }
+            ]
+          },
+          thu: {
+            title: 'Бейсенбі — 5 «А» (206 каб)',
+            morning: [
+              { num: 1, time: '8:00 - 8:45', sub: 'Орыс тілі мен әдебиеті', room: '207', floor: 2 },
+              { num: 2, time: '8:50 - 9:35', sub: 'Математика', room: '201', floor: 2 },
+              { num: 3, time: '9:45 - 10:30', sub: 'Ағылшын тілі', room: '203', floor: 2 },
+              { num: 4, time: '10:40 - 11:25', sub: 'Қазақ әдебиеті', room: '204', floor: 2 },
+              { num: 5, time: '11:30 - 12:15', sub: 'Жаратылыстану', room: '106', floor: 1 },
+              { num: 6, time: '12:20 - 13:05', sub: 'Дене шынықтыру', room: '305', floor: 3 },
+              { num: 7, time: '13:10 - 13:55', sub: 'Кеке қауіпсіздік / Құқық', room: '206', floor: 2 }
+            ],
+            clubs: [
+              { time: '14:30 - 15:30', name: 'Python бағдарламалау бастамасы', room: '202', floor: 2, mentor: 'Информатика' },
+              { time: '15:45 - 16:45', name: 'Домбыра және Музыкалық шеберлік', room: '301', floor: 3, mentor: '«Адай» ансамблі' }
+            ]
+          },
+          fri: {
+            title: 'Жұма — 5 «А» (206 каб)',
+            morning: [
+              { num: 1, time: '8:00 - 8:45', sub: 'Математика', room: '201', floor: 2 },
+              { num: 2, time: '8:50 - 9:35', sub: 'Көркем еңбек', room: '302', floor: 3 },
+              { num: 3, time: '9:45 - 10:30', sub: 'Музыка', room: '301', floor: 3 },
+              { num: 4, time: '10:40 - 11:25', sub: 'Қазақстан тарихы', room: '205', floor: 2 },
+              { num: 5, time: '11:30 - 12:15', sub: 'Жаратлицей (Зерттеу)', room: '103', floor: 1 },
+              { num: 6, time: '12:20 - 13:05', sub: 'Қазақ тілі', room: '204', floor: 2 },
+              { num: 7, time: '13:10 - 13:55', sub: 'Сыныптық қорытынды жиналыс', room: '206', floor: 2 }
+            ],
+            clubs: [
+              { time: '14:30 - 16:00', name: 'Робототехникалық хакатон & STEM сынақтары', room: '102', floor: 1, mentor: 'Қабдолла Манас' }
+            ]
+          }
+        };
+
+        const current = scheduleData[day] || scheduleData.mon;
+
+        // Morning Block
+        const mornHeader = document.createElement('div');
+        mornHeader.className = 'flex items-center justify-between text-xs font-bold text-cyan-300 pb-1 border-b border-cyan-500/20';
+        mornHeader.innerHTML = `<span><i class="fa-solid fa-graduation-cap mr-1"></i> I КЕЗЕҢ ТҰРАҚТЫ КЕСТЕ (ТАҢҒЫ АУЫСЫМ)</span><span class="text-white">${current.title}</span>`;
+        container.appendChild(mornHeader);
+
+        current.morning.forEach(item => {
+          const row = document.createElement('div');
+          row.className = 'glass-card p-3 rounded-xl border border-slate-700 flex items-center justify-between hover:border-cyan-400 transition';
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <span class="w-6 h-6 rounded-lg bg-cyan-600/30 text-cyan-400 font-bold flex items-center justify-center text-xs">${item.num}</span>
+              <span class="font-mono text-xs text-cyan-400 font-semibold w-24">${item.time}</span>
+              <div>
+                <h4 class="text-xs font-bold text-white">${item.sub}</h4>
+                <span class="text-[11px] text-slate-400">№${item.room} Кабинет (${item.floor}-қабат)</span>
+              </div>
+            </div>
+            <button class="sched-go-btn px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition flex items-center gap-1.5">
+              <i class="fa-solid fa-location-arrow text-[10px]"></i> Кабинетке бару
+            </button>
+          `;
+          row.querySelector('.sched-go-btn').addEventListener('click', () => {
+            const foundRoom = ALL_ROOMS.find(r => r.code === item.room) || ALL_ROOMS[0];
+            document.getElementById('schedule-modal').classList.add('hidden');
+            this.navigateDirectToRoom(foundRoom);
+          });
+          container.appendChild(row);
+        });
+
+        // Afternoon Clubs Block (Түскі ауысымдағы робототехника және STEM үйірмелері)
+        const clubHeader = document.createElement('div');
+        clubHeader.className = 'mt-5 flex items-center justify-between text-xs font-bold text-amber-300 pb-1 border-b border-amber-500/20';
+        clubHeader.innerHTML = `<span><i class="fa-solid fa-robot mr-1"></i> ТҮСКІ АУЫСЫМ: ҮЙІРМЕЛЕР МЕН STEM ЛАБОРАТОРИЯЛАР</span><span class="text-amber-200">Қосымша білім</span>`;
+        container.appendChild(clubHeader);
+
+        current.clubs.forEach(club => {
+          const cRow = document.createElement('div');
+          cRow.className = 'glass-card p-3 rounded-xl border border-amber-500/30 bg-amber-950/20 flex items-center justify-between hover:border-amber-400 transition';
+          cRow.innerHTML = `
+            <div class="flex items-center gap-3">
+              <span class="w-6 h-6 rounded-lg bg-amber-500/30 text-amber-300 font-bold flex items-center justify-center text-xs"><i class="fa-solid fa-star text-[10px]"></i></span>
+              <span class="font-mono text-xs text-amber-300 font-semibold w-28">${club.time}</span>
+              <div>
+                <h4 class="text-xs font-bold text-white">${club.name}</h4>
+                <span class="text-[11px] text-amber-300/80">№${club.room} Кабинет (${club.floor}-қабат) • Жетекші: ${club.mentor}</span>
+              </div>
+            </div>
+            <button class="sched-club-btn px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition flex items-center gap-1.5">
+              <i class="fa-solid fa-person-walking text-xs"></i> Үйірмеге бару
+            </button>
+          `;
+          cRow.querySelector('.sched-club-btn').addEventListener('click', () => {
+            const foundRoom = ALL_ROOMS.find(r => r.code === club.room) || ALL_ROOMS[1];
+            document.getElementById('schedule-modal').classList.add('hidden');
+            this.navigateDirectToRoom(foundRoom);
+          });
+          container.appendChild(cRow);
+        });
+      }
+
+      /**
+       * DIGITAL LIBRARY MODAL IMPLEMENTATION
+       */
+      openLibraryModal() {
+        document.exitPointerLock?.();
+        document.getElementById('library-modal').classList.remove('hidden');
+        this.renderLibraryBooks('all');
+      }
+
+      renderLibraryBooks(category) {
+        const grid = document.getElementById('library-books-grid');
+        grid.innerHTML = '';
+
+        const books = [
+          {
+            id: 'book-ai',
+            title: 'Жасанды Интеллектке Кіріспе',
+            cat: 'stem',
+            author: 'Академиялық оқу құралы — 2026',
+            desc: 'Машиналық оқыту, нейрожелілер құрылымы, мәтін және графикалық модельдер генерациясы.',
+            pages: [
+              {
+                chapter: '1-тарау. Нейрондық желілер архитектурасы',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed"><strong>Жасанды интеллект (ЖИ)</strong> — адамның ойлау, талдау және пайымдау қабілеттерін компьютерлік жүйелер арқылы қайталайтын озық сала.</p>
+                       <div class="my-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs font-serif italic text-amber-900">
+                         «Нейрожелінің жұмысы мыңдаған салмақ коэффициенттерін өздігінен түзету арқылы тәжірибеден үйренуге негізделген.»
+                       </div>
+                       <p class="font-serif text-sm leading-relaxed">Оқыту процесі деректер жиынынан (dataset) басталып, градиенттік түсу алгоритмдері арқылы нәтиже дәлдігін максималды деңгейге жеткізеді.</p>`,
+                illustration: `<div class="p-3 bg-slate-900 rounded-xl text-center text-cyan-400 font-mono text-xs border border-cyan-500/30">
+                                 [Кіріс нейрондары] ➔ [Жасырын қабаттар] ➔ [Шығыс нәтижесі]
+                               </div>`
+              },
+              {
+                chapter: '2-тарау. Білім саласындағы ЖИ көмекшілері',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Қазіргі мектептердегі ЖИ жүйелері әр оқушының жеке оқу қарқынына бейімделеді. Мысалы, оқушы күрделі математикалық есептен мүдірсе, алгоритм қосымша ишара мен ұқсас мысалдар ұсынады.</p>
+                       <ul class="list-disc list-inside space-y-1.5 font-serif text-xs text-slate-700">
+                         <li>Жеке бейімделген тапсырмалар генерациясы;</li>
+                         <li>Қателерді жедел анықтап, шешу алгоритмін көрсету;</li>
+                         <li>Шығармашылық жобаларға виртуалды кеңесші болу.</li>
+                       </ul>`,
+                illustration: `<div class="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold text-center">
+                                 ✓ Қабдолла Манастың цифрлық мектеп зертханасына қосылған
+                               </div>`
+              },
+              {
+                chapter: '3-тарау. Prompt Engineering (Сұраныс өнері)',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Нейрожеліден нақты әрі сапалы нәтиже алу үшін оған берілетін сұраныс (prompt) өте маңызды. Ол үш бөліктен тұрады: контекст, нақты тапсырма және нәтиже пішімі.</p>
+                       <p class="font-serif text-xs text-slate-600">Мысалы: «Сен мектеп оқушысына физикадан Ом заңын өмірден мысал келтіре отырып, 3 сөйлеммен түсіндір».</p>`,
+                illustration: `<div class="p-3 bg-sky-950 text-sky-200 rounded-xl font-mono text-xs border border-sky-600">Prompt: Context + Instruction + Output format</div>`
+              },
+              {
+                chapter: '4-тарау. Қорытынды бақылау сұрақтары',
+                text: `<p class="mb-2 font-serif text-sm font-bold">Тақырыпты бекітуге арналған тест:</p>
+                       <ol class="list-decimal list-inside space-y-2 font-serif text-xs text-slate-800">
+                         <li>Нейрожелі моделін үйрету үшін ең алдымен не қажет?</li>
+                         <li>Генеративті ЖИ мен іздеу жүйелерінің айырмашылығы неде?</li>
+                         <li>Оқу үдерісінде ЖИ қолданудың басты артықшылығы қандай?</li>
+                       </ol>`,
+                illustration: `<div class="mt-4 p-2.5 bg-amber-100 rounded-lg text-amber-900 text-[11px] font-bold text-center">Кабинет №101 зертханасына барып тест тапсырыңыз!</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-stem',
+            title: 'STEM Инженерия Негіздері',
+            cat: 'stem',
+            author: 'STEM Kazakhstan — 2026',
+            desc: 'Механизмдер, көпір салу принциптері, беріктік формулалары және жасыл энергетика.',
+            pages: [
+              {
+                chapter: '1-тарау. Көпір құрылымы және күштер тепе-теңдігі',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Көпір салудағы ең басты инженерлік міндет — тартылыс, қысым және созылу күштерін тіректер мен арқалықтар арасында біркелкі тарату.</p>
+                       <p class="font-serif text-sm leading-relaxed">Фермалы көпірлер үшбұрышты құрылымдарының арқасында үлкен салмаққа төзімді келеді.</p>`,
+                illustration: `<div class="p-3 bg-slate-100 rounded-xl border border-slate-300 text-center font-serif text-xs text-slate-700">Үшбұрышты ферма (Truss): Деформацияға ең берік геометрия</div>`
+              },
+              {
+                chapter: '2-тарау. Жаңартылатын таза энергия көздері',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Болашақтың эко-мектебі күн панельдері мен жел турбиналары арқылы өзін-өзі электр қуатымен толық қамтамасыз етеді.</p>
+                       <p class="font-serif text-xs text-slate-600">Күн ұяшықтары фотоэффект құбылысы негізінде күн сәулесін тікелей тұрақты электр тогына айналдырады.</p>`,
+                illustration: `<div class="p-3 bg-emerald-950 text-emerald-300 rounded-xl font-mono text-xs text-center border border-emerald-600">Күн энергиясы ➔ Инвертор ➔ Мектеп желісі (220V)</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-physics',
+            title: 'Жоғары Физика: Заңдар мен Тәжірибелер',
+            cat: 'science',
+            author: 'Проф. М. Ысқақов',
+            desc: 'Электр тізбектері, Ом заңы, оптика, маятник тербелістері және эксперименттер.',
+            pages: [
+              {
+                chapter: '1-тарау. Тізбек бөлігі үшін Ом заңы',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed"><strong>Ом заңы:</strong> Тізбек бөлігіндегі ток күші өткізгіштің ұштарындағы кернеуге тура пропорционал, ал оның кедергісіне кері пропорционал болады.</p>
+                       <div class="my-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-center">
+                         <span class="font-serif text-xl font-bold text-amber-950">I = U / R</span>
+                       </div>
+                       <p class="font-serif text-xs text-slate-700">Мұнда: I — ток күші (Ампер), U — кернеу (Вольт), R — кедергі (Ом).</p>`,
+                illustration: `<div class="p-2.5 bg-slate-900 text-amber-300 rounded-lg text-xs font-mono text-center">1 Ампер = 1 Вольт / 1 Ом</div>`
+              },
+              {
+                chapter: '2-тарау. Математикалық маятниктің еркін тербелісі',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Созылмайтын салмақсыз жіпке ілінген нүктелік масса <strong>математикалық маятник</strong> деп аталады.</p>
+                       <p class="font-serif text-xs leading-relaxed text-slate-700">Оның тербеліс периоды Т тек жіптің ұзындығы мен еркін түсу үдеуіне (g) байланысты.</p>`,
+                illustration: `<div class="p-3 bg-slate-100 rounded-xl text-center font-serif text-xs text-slate-800 border border-slate-300">T = 2π √(L / g)</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-chem',
+            title: 'Химиялық Элементтер мен Молекулалар',
+            cat: 'science',
+            author: 'Д. Менделеев орталығы',
+            desc: 'Периодтық заң, реакция кинетикасы және 3D органикалық қосылыстар.',
+            pages: [
+              {
+                chapter: '1-тарау. Периодтық заңның физикалық мәні',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Химиялық элементтердің қасиеттері олардың атом ядросының зарядына периодты түрде тәуелді болады.</p>
+                       <p class="font-serif text-xs text-slate-700">Элементтің реттік нөмірі оның ядросындағы протондар санын және ядроны айнала қозғалатын электрондардың жалпы санын білдіреді.</p>`,
+                illustration: `<div class="p-3 bg-rose-950 text-rose-200 rounded-xl font-mono text-xs text-center border border-rose-600">Атом құрылысы: Ядро (p+ + n0) және Электрон қабығы (e-)</div>`
+              },
+              {
+                chapter: '2-тарау. Бейтараптану реакциялары',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Қышқыл мен негіз әрекеттескенде тұз бен су түзіледі. Бұл химиядағы бейтараптану деп аталады.</p>
+                       <div class="my-2 p-3 bg-pink-50 border border-pink-200 rounded-xl text-center font-serif text-sm font-bold text-pink-950">
+                         HCl + NaOH ➔ NaCl + H₂O
+                       </div>`,
+                illustration: `<div class="p-2.5 bg-slate-100 rounded-lg text-slate-700 text-xs font-serif text-center">№105 Химия зертханасында сынауықты араластырып көріңіз!</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-math',
+            title: 'Кеңістіктік Геометрия және Стереометрия',
+            cat: 'math',
+            author: 'Математика институты',
+            desc: '3D денелердің көлемі, ауданы, векторлық есептеулер.',
+            pages: [
+              {
+                chapter: '1-тарау. Кеңістіктегі көпжақтар',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Стереометрия — кеңістіктегі үшөлшемді геометриялық фигуралардың қасиеттерін зерттейтін математика бөлімі.</p>
+                       <ul class="list-disc list-inside space-y-1 font-serif text-xs text-slate-700">
+                         <li>Кубтың көлемі: V = a³</li>
+                         <li>Шардың көлемі: V = 4/3 π R³</li>
+                         <li>Цилиндр көлемі: V = π R² h</li>
+                       </ul>`,
+                illustration: `<div class="p-3 bg-sky-950 text-sky-300 rounded-xl font-mono text-xs text-center border border-sky-600">3D Стереометриялық фигуралар</div>`
+              },
+              {
+                chapter: '2-тарау. Координаталық әдіс',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Кеңістіктегі кез келген нүкте үш координат арқылы анықталады: (x, y, z). Бұл Three.js 3D графикасының да негізгі өзегі болып табылады.</p>`,
+                illustration: `<div class="p-2.5 bg-slate-100 rounded-lg text-center font-serif text-xs text-slate-700 border border-slate-300">№201 Математика кабинетінде 3D модельді айналдырыңыз</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-cs',
+            title: 'Python Тілінде Алгоритмдеу',
+            cat: 'math',
+            author: 'IT-Academy',
+            desc: 'Мәліметтер құрылымы, сұрыптау алгоритмдері және веб-дамыту.',
+            pages: [
+              {
+                chapter: '1-тарау. Алгоритм түсінігі және сызықтық құрылым',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Алгоритм — қойылған мақсатқа жету үшін орындалуы тиіс командалардың нақты әрі реттелген тізбегі.</p>
+                       <pre class="bg-slate-900 text-emerald-400 p-3 rounded-xl text-xs font-mono">def hello_school():
+    name = "Қабдолла Манас"
+    print(f"Сәлем, {name}! Цифрлық мектепке қош келдіңіз!")</pre>`,
+                illustration: `<div class="p-2.5 bg-slate-900 text-cyan-300 rounded-lg text-xs font-mono text-center">№202 Информатика кабинетінде код симуляторын тексеріңіз</div>`
+              },
+              {
+                chapter: '2-тарау. Сұрыптау алгоритмдері',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Bubble sort (көпіршікті сұрыптау) — массив элементтерін жұп-жұбымен салыстырып, қажетті орынға ауыстыратын ең қарапайым алгоритм.</p>`,
+                illustration: `<div class="p-3 bg-sky-950 text-sky-200 rounded-xl font-mono text-xs text-center border border-sky-600">O(n²) Күрделілік дәрежесі</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-history',
+            title: 'Қазақстанның Тарихи Хронологиясы',
+            cat: 'humanities',
+            author: 'Тарих институты',
+            desc: 'Ұлы дала өркениетінен заманауи Қазақстанға дейінгі кезеңдер.',
+            pages: [
+              {
+                chapter: '1-тарау. Сақ және Түркі дәуірінің мұрасы',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Ұлы дала кеңістігінде өмір сүрген сақ тайпалары «аң стиліндегі» алтын өнерімен бүкіл әлемге танылды. Алтын адам — бабаларымыздың терең металлургиялық және мемлекеттік деңгейінің жарқын айғағы.</p>`,
+                illustration: `<div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center font-serif text-xs text-amber-900">№205 Кабинет — Тарих мұражайында жәдігерлермен танысыңыз</div>`
+              },
+              {
+                chapter: '2-тарау. Қазақ хандығы және тәуелсіздік шежіресі',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">1465 жылы Керей мен Жәнібек хандар негізін қалаған Қазақ хандығы — бүгінгі еркін әрі өркендеген Қазақстанның тарихи тірегі.</p>`,
+                illustration: `<div class="p-2.5 bg-slate-100 rounded-lg text-center font-serif text-xs text-slate-700">Мәңгілік Ел идеясы және цифрлық болашақ</div>`
+              }
+            ]
+          },
+          {
+            id: 'book-english',
+            title: 'English Academic & Communication',
+            cat: 'humanities',
+            author: 'Cambridge Press',
+            desc: 'Тілдік дағдылар, грамматика және академиялық эссе жазу.',
+            pages: [
+              {
+                chapter: 'Unit 1. Digital Future & Education',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Welcome to the English Language Lab! In this unit we discuss innovation, STEM learning, and scientific cooperation across the globe.</p>
+                       <ul class="list-disc list-inside space-y-1 font-serif text-xs text-slate-700">
+                         <li><strong>AI (Artificial Intelligence)</strong> — computer systems simulating human intelligence.</li>
+                         <li><strong>Innovation</strong> — a new method, idea, or product.</li>
+                       </ul>`,
+                illustration: `<div class="p-3 bg-indigo-950 text-indigo-200 rounded-xl font-mono text-xs text-center border border-indigo-600">Room #203 — Interactive English Board</div>`
+              },
+              {
+                chapter: 'Unit 2. Active Speaking & Grammar',
+                text: `<p class="mb-3 font-serif text-sm leading-relaxed">Practice everyday dialogues with the digital AI companion located on floor 1 or inside room #203.</p>`,
+                illustration: `<div class="p-2.5 bg-slate-100 rounded-lg text-center font-serif text-xs text-slate-700">Vocabulary quiz and listening tasks available</div>`
+              }
+            ]
+          }
+        ];
+
+        const filtered = category === 'all' ? books : books.filter(b => b.cat === category);
+
+        filtered.forEach(b => {
+          const card = document.createElement('div');
+          card.className = 'glass-card p-4 rounded-2xl border border-slate-700 flex flex-col justify-between';
+          card.innerHTML = `
+            <div>
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm mb-2">
+                <i class="fa-solid fa-book"></i>
+              </div>
+              <h4 class="text-xs font-bold text-white mb-1">${b.title}</h4>
+              <span class="text-[10px] text-cyan-400 font-semibold block mb-2">${b.author}</span>
+              <p class="text-[11px] text-slate-300 leading-relaxed mb-4">${b.desc}</p>
+            </div>
+            <button class="open-book-btn w-full py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-book-open"></i> Шынайы Оқулықты Ашу
+            </button>
+          `;
+          card.querySelector('.open-book-btn').addEventListener('click', () => {
+            this.openRealisticBookReader(b);
+          });
+          grid.appendChild(card);
+        });
+      }
+
+      /**
+       * REALISTIC E-BOOK READER ENGINE
+       */
+      openRealisticBookReader(bookData) {
+        sound.playPageTurn();
+        this.currentBook = bookData;
+        this.currentBookPageIndex = 0; // Left page index (0, 2, 4...)
+
+        document.getElementById('reader-book-title').innerText = bookData.title;
+        document.getElementById('reader-book-author').innerText = `${bookData.author} • ${bookData.desc}`;
+        
+        document.getElementById('book-reader-modal').classList.remove('hidden');
+        this.renderBookSpread();
+      }
+
+      turnBookPage(direction) {
+        if (!this.currentBook) return;
+        const total = this.currentBook.pages.length;
+        const newIndex = this.currentBookPageIndex + direction;
+
+        if (newIndex >= 0 && newIndex < total) {
+          sound.playPageTurn();
+          this.currentBookPageIndex = newIndex;
+          this.renderBookSpread();
+        } else {
+          sound.playError();
+        }
+      }
+
+      renderBookSpread() {
+        if (!this.currentBook) return;
+        const pages = this.currentBook.pages;
+        const leftIdx = this.currentBookPageIndex;
+        const rightIdx = this.currentBookPageIndex + 1;
+        const total = pages.length;
+
+        // Left Page
+        const leftContainer = document.getElementById('book-page-left');
+        const leftPageData = pages[leftIdx];
+        if (leftPageData) {
+          leftContainer.innerHTML = `
+            <div>
+              <div class="flex items-center justify-between pb-3 border-b border-amber-900/15 mb-4 text-[11px] text-amber-900/70 font-serif">
+                <span>«${this.currentBook.title}»</span>
+                <span>Бет ${leftIdx + 1}</span>
+              </div>
+              <h2 class="font-serif font-bold text-base text-[#2c1810] mb-3">${leftPageData.chapter}</h2>
+              <div class="text-[#2c1810]">${leftPageData.text}</div>
+            </div>
+            <div class="mt-4">
+              ${leftPageData.illustration || ''}
+              <div class="text-center pt-3 border-t border-amber-900/10 text-[11px] font-mono text-slate-500 mt-3">— ${leftIdx + 1} —</div>
+            </div>
+          `;
+        } else {
+          leftContainer.innerHTML = `<div class="flex-1 flex items-center justify-center text-slate-400 font-serif italic text-sm">Парақ бос</div>`;
+        }
+
+        // Right Page
+        const rightContainer = document.getElementById('book-page-right');
+        const rightPageData = pages[rightIdx];
+        if (rightPageData) {
+          rightContainer.innerHTML = `
+            <div>
+              <div class="flex items-center justify-between pb-3 border-b border-amber-900/15 mb-4 text-[11px] text-amber-900/70 font-serif">
+                <span>Бет ${rightIdx + 1}</span>
+                <span>«БОЛАШАҚТЫҢ ЦИФРЛЫҚ МЕКТЕБІ»</span>
+              </div>
+              <h2 class="font-serif font-bold text-base text-[#2c1810] mb-3">${rightPageData.chapter}</h2>
+              <div class="text-[#2c1810]">${rightPageData.text}</div>
+            </div>
+            <div class="mt-4">
+              ${rightPageData.illustration || ''}
+              <div class="text-center pt-3 border-t border-amber-900/10 text-[11px] font-mono text-slate-500 mt-3">— ${rightIdx + 1} —</div>
+            </div>
+          `;
+        } else {
+          rightContainer.innerHTML = `
+            <div class="flex-1 flex flex-col items-center justify-center text-center p-6 bg-amber-50/50 rounded-2xl border border-dashed border-amber-300">
+              <i class="fa-solid fa-graduation-cap text-3xl text-amber-500 mb-2"></i>
+              <h4 class="font-serif font-bold text-sm text-[#2c1810]">Тарау аяқталды</h4>
+              <p class="font-serif text-xs text-slate-600 mt-1">Оқулықты меңгеріп болған соң, тиісті пән кабинетіне барып тәжірибе жасаңыз!</p>
+            </div>
+          `;
+        }
+
+        // Update Indicator
+        document.getElementById('book-page-indicator').innerText = `${leftIdx + 1}-${Math.min(rightIdx + 1, total)} / ${total} бет`;
+      }
+
+      /**
+       * AI ASSISTANT DIALOG CHAT
+       */
+      openAiModal() {
+        document.exitPointerLock?.();
+        document.getElementById('ai-modal').classList.remove('hidden');
+      }
+
+      handleAiQuestion(question) {
+        const history = document.getElementById('ai-chat-history');
+
+        // User message bubble
+        const userDiv = document.createElement('div');
+        userDiv.className = 'flex justify-end gap-3';
+        userDiv.innerHTML = `
+          <div class="bg-cyan-600 p-3 rounded-2xl rounded-tr-none text-white text-xs">
+            ${question}
+          </div>
+        `;
+        history.appendChild(userDiv);
+
+        sound.playInteract();
+
+        // Model reply
+        setTimeout(() => {
+          sound.playSuccess();
+          const qLower = question.toLowerCase();
+          let reply = 'Мектеп бойынша кез келген кабинетті карта арқылы тауып, виртуалды зертхананы орындай аласыз.';
+
+          if (qLower.includes('химия')) {
+            reply = 'Химия зертханасы 1-қабатта, №105 кабинетте орналасқан. Ішінде реакциялар симуляторы мен 3D молекулалар бар.';
+          } else if (qLower.includes('stem')) {
+            reply = 'STEM зертханасы 1-қабатта №103 кабинетте. Онда көпір құрастыру, күн панельдері және жел генераторларын сынауға болады.';
+          } else if (qLower.includes('робот')) {
+            reply = 'Робототехника кабинеті 1-қабатта №102 кабинет. Онда роботқа командалар беріп, трассадан өткізе аласыз.';
+          } else if (qLower.includes('математика')) {
+            reply = 'Математика кабинеті 2-қабатта №201 кабинетте орналасқан. Мұнда стереометрия мен функциялар тақтасы жұмыс істейді.';
+          }
+
+          const botDiv = document.createElement('div');
+          botDiv.className = 'flex gap-3';
+          botDiv.innerHTML = `
+            <div class="w-7 h-7 rounded-full bg-amber-500 flex items-center justify-center text-slate-900 text-xs font-bold">AI</div>
+            <div class="bg-slate-800/80 p-3 rounded-2xl rounded-tl-none border border-slate-700 text-slate-200 text-xs">
+              ${reply}
+            </div>
+          `;
+          history.appendChild(botDiv);
+          history.scrollTop = history.scrollHeight;
+        }, 500);
+      }
+
+      /**
+       * MAIN ANIMATION LOOP
+       */
+      animate() {
+        requestAnimationFrame(this.animate);
+
+        const delta = Math.min(this.clock.getDelta(), 0.1);
+
+        // Exterior Orbiting Camera in Homepage mode
+        if (this.cameraMode === 'exterior') {
+          // Gentle auto-orbit if user is not actively dragging
+          if (!this.isOrbitDragging) {
+            this.exteriorAngle += delta * 0.08;
+          }
+
+          const camX = Math.sin(this.exteriorAngle) * this.exteriorDistance;
+          const camZ = -Math.cos(this.exteriorAngle) * this.exteriorDistance;
+          this.camera.position.set(camX, this.exteriorHeight, camZ);
+          this.camera.lookAt(0, 8, 0);
+
+          // Animate campus hologram globe
+          if (this.campusHoloGlobe) {
+            this.campusHoloGlobe.rotation.y += 0.015;
+            this.campusHoloGlobe.rotation.x += 0.008;
+          }
+        } else {
+          // Update movement physics & interactions
+          this.updatePlayerPhysics(delta);
+          this.updateInteractionPrompt();
+        }
+
+        // Animate central 3D showcase items inside classrooms
+        if (this.animatedShowcaseModels) {
+          this.animatedShowcaseModels.forEach(m => {
+            if (m.userData.isRotating) {
+              m.rotation.y += m.userData.speed || 0.01;
+            }
+            if (m.userData.isRotor) {
+              m.userData.rotor.rotation.z += 0.08;
+            }
+          });
+        }
+
+        // Render scene
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    // Initialize application on window load
+    window.addEventListener('DOMContentLoaded', () => {
+      window.schoolApp = new DigitalSchoolApp();
+    });
+  </script>
+</body>
+</html>
